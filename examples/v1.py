@@ -1,55 +1,4 @@
-import re
-
-class Node:
-    def __init__(self, node_type, id):
-        self.node_type = node_type  # 'gamma', 'delta', 'epsilon'
-        self.id = id               # Unique identifier for the node
-        self.ports = [None, None, None]  # Connections: Principal, Auxiliary 1, Auxiliary 2
-        self.var_name = None  # Store variable name (used in delta and epsilon nodes)
-
-    def __repr__(self):
-        return f"{self.node_type}{self.id}({self.var_name})"
-
-class Graph:
-    def __init__(self):
-        self.nodes = []
-        self.next_id = 0
-
-    def create_node(self, node_type):
-        node = Node(node_type, self.next_id)
-        self.next_id += 1
-        self.nodes.append(node)
-        return node
-
-    def connect(self, node1, port1, node2, port2):
-        node1.ports[port1] = (node2, port2)
-        node2.ports[port2] = (node1, port1)
-
-    def remove_node(self, node):
-        for i in range(3):
-            if node.ports[i]:
-                neighbor, port = node.ports[i]
-                neighbor.ports[port] = None
-        self.nodes.remove(node)
-
 # SIC Interaction Rules
-def apply_rules(node1, node2, graph):
-    # Annihilation Rule: Nodes of the same type annihilate
-    if node1.node_type == node2.node_type:
-        reconnect_ports(node1, node2, graph)
-        graph.remove_node(node1)
-        graph.remove_node(node2)
-        return True
-
-    # Commutation Rule: Nodes of different types rearrange connections
-    if {node1.node_type, node2.node_type} == {'gamma', 'delta'}:
-        if node1.ports[1] and node2.ports[2]:  # Check if ports are valid
-            rearrange_connections(node1, node2, graph)
-            return True
-
-    return False
-
-
 def reconnect_ports(node1, node2, graph):
     # Reconnect auxiliary ports of annihilated nodes
     for i in range(1, 3):  # Auxiliary ports only
@@ -69,7 +18,22 @@ def rearrange_connections(node1, node2, graph):
         graph.connect(aux1_node, aux1_port, node2, 1)
         graph.connect(aux2_node, aux2_port, node1, 2)
 
-# Simulation: Apply Rules Until No More Changes
+def apply_rules(node1, node2, graph):
+    # Annihilation Rule: Nodes of the same type annihilate
+    if node1.node_type == node2.node_type:
+        reconnect_ports(node1, node2, graph)
+        graph.remove_node(node1)
+        graph.remove_node(node2)
+        return True
+
+    # Commutation Rule: Nodes of different types rearrange connections
+    if {node1.node_type, node2.node_type} == {'gamma', 'delta'}:
+        if node1.ports[1] and node2.ports[2]:  # Check if ports are valid
+            rearrange_connections(node1, node2, graph)
+            return True
+
+    return False
+
 def simulate(graph):
     while True:
         changes = False
@@ -85,20 +49,56 @@ def simulate(graph):
         if not changes:
             break
 
-# Parser for Lambda Calculus
+import re
+
+class Node:
+    def __init__(self, node_type, id):
+        self.node_type = node_type  # 'gamma', 'delta', 'epsilon'
+        self.id = id                # Unique identifier
+        self.ports = [None, None, None]  # [principal, aux1, aux2]
+        self.var_name = None   # for delta/epsilon
+
+    def __repr__(self):
+        return f"{self.node_type}{self.id}({self.var_name})"
+
+class Graph:
+    def __init__(self):
+        self.nodes = []
+        self.next_id = 0
+
+    def create_node(self, node_type):
+        n = Node(node_type, self.next_id)
+        self.next_id += 1
+        self.nodes.append(n)
+        return n
+
+    def connect(self, node1, port1, node2, port2):
+        node1.ports[port1] = (node2, port2)
+        node2.ports[port2] = (node1, port1)
+
+    def remove_node(self, node):
+        for i in range(3):
+            if node.ports[i]:
+                nbr, p = node.ports[i]
+                nbr.ports[p] = None
+        self.nodes.remove(node)
+
+# ————————————————————————————————
+# TOKENIZER + PARSER (unchanged)
+# ————————————————————————————————
 def tokenize(expr_str):
     token_spec = [
         ('LAMBDA', r'[λ\\]'),
-        ('DOT', r'\.'),
+        ('DOT',    r'\.'),
         ('LPAREN', r'\('),
         ('RPAREN', r'\)'),
-        ('VAR', r'[a-zA-Z_][a-zA-Z0-9_]*'),
-        ('SPACE', r'\s+'),
+        ('VAR',    r'[a-zA-Z_][a-zA-Z0-9_]*'),
+        ('SPACE',  r'\s+'),
     ]
-    tok_regex = '|'.join('(?P<%s>%s)' % pair for pair in token_spec)
-    for mo in re.finditer(tok_regex, expr_str):
-        kind = mo.lastgroup
-        val = mo.group()
+    tok_regex = '|'.join(f'(?P<{name}>{pat})' for name,pat in token_spec)
+    for m in re.finditer(tok_regex, expr_str):
+        kind = m.lastgroup
+        val  = m.group()
         if kind != 'SPACE':
             yield (kind, val)
 
@@ -107,12 +107,11 @@ def parse_lambda_expr(expr_str):
     pos = 0
 
     def peek():
-        return tokens[pos] if pos < len(tokens) else ('EOF', '')
-
+        return tokens[pos] if pos < len(tokens) else ('EOF','')
     def consume(expected_kind=None):
         nonlocal pos
         if pos >= len(tokens):
-            raise SyntaxError("Unexpected end of input")
+            raise SyntaxError("Unexpected end")
         kind, val = tokens[pos]
         if expected_kind and kind != expected_kind:
             raise SyntaxError(f"Expected {expected_kind}, got {kind}")
@@ -122,10 +121,9 @@ def parse_lambda_expr(expr_str):
     def parse_var():
         kind, val = peek()
         if kind == 'VAR':
-            consume('VAR')
-            return ('var', val)
+            return ('var', consume('VAR'))
         else:
-            raise SyntaxError("Expected variable")
+            raise SyntaxError("Expected VAR")
 
     def parse_atom():
         kind, val = peek()
@@ -133,26 +131,26 @@ def parse_lambda_expr(expr_str):
             return parse_lambda()
         elif kind == 'LPAREN':
             consume('LPAREN')
-            expr = parse_expr()
+            e = parse_expr()
             consume('RPAREN')
-            return expr
+            return e
         elif kind == 'VAR':
             return parse_var()
         else:
-            raise SyntaxError(f"Unexpected token: {kind}")
+            raise SyntaxError(f"Unexpected token {kind}")
 
     def parse_lambda():
         consume('LAMBDA')
-        var_name = consume('VAR')
+        v = consume('VAR')
         consume('DOT')
         body = parse_expr()
-        return ('lambda', var_name, body)
+        return ('lam', v, body)
 
     def parse_expr():
         left = parse_atom()
         while True:
             kind, _ = peek()
-            if kind in ('VAR', 'LPAREN', 'LAMBDA'):
+            if kind in ('VAR','LPAREN','LAMBDA'):
                 right = parse_atom()
                 left = ('app', left, right)
             else:
@@ -161,62 +159,45 @@ def parse_lambda_expr(expr_str):
 
     result = parse_expr()
     if pos != len(tokens):
-        raise SyntaxError("Unexpected tokens at end")
+        raise SyntaxError("Trailing tokens")
     return result
 
-def unparse_lambda_expr(expr):
-    """
-    Convert a parsed lambda expression back to a string.
-    expr can be:
-      - ('var', name)
-      - ('lambda', var, body)
-      - ('app', func, arg)
-    """
+def lambda_expr_to_str(expr):
+    t = expr[0]
+    if t == 'var':
+        return expr[1]
+    if t == 'lam':
+        return f"λ{expr[1]}.{lambda_expr_to_str(expr[2])}"
+    if t == 'app':
+        left = lambda_expr_to_str(expr[1])
+        right = lambda_expr_to_str(expr[2])
+        if expr[1][0] == 'lam':
+            left = f"({left})"
+        if expr[2][0] in ('app','lam'):
+            right = f"({right})"
+        return f"{left} {right}"
+    return '?'
 
-    def needs_parens(subexpr):
-        # Determine if subexpr should be parenthesized
-        return isinstance(subexpr, tuple) and subexpr[0] == 'app'
-
-    if isinstance(expr, tuple):
-        tag = expr[0]
-        if tag == 'var':
-            return expr[1]
-        elif tag == 'lambda':
-            var = expr[1]
-            body = unparse_lambda(expr[2])
-            return f"λ{var}.{body}"
-        elif tag == 'app':
-            func = expr[1]
-            arg = expr[2]
-            func_str = unparse_lambda(func)
-            arg_str = unparse_lambda(arg)
-            if needs_parens(func):
-                func_str = f"({func_str})"
-            if needs_parens(arg):
-                arg_str = f"({arg_str})"
-            return f"{func_str} {arg_str}"
-    else:
-        # For plain variables or unexpected cases
-        return str(expr)
-
-
-# Lambda to SIC Translation
+# ————————————————————————————————
+# UPDATED lambda_to_sic
+# ————————————————————————————————
 def lambda_to_sic(expr, graph, env=None):
+    """
+    For each bound variable “x”, we create exactly one Delta(x) linked to the binderGamma.
+    BUT for each *occurrence* of x in the body, we create a brand‐new Epsilon(x) and do NOT try to re‐use Delta(x).
+    """
     if env is None:
         env = {}
 
     t = expr[0]
-
     if t == 'var':
         name = expr[1]
-        if name in env:
-            return env[name]
-        else:
-            ep = graph.create_node('epsilon')
-            ep.var_name = name
-            return ep
+        # Always create a fresh epsilon for every occurrence.
+        ep = graph.create_node('epsilon')
+        ep.var_name = name
+        return ep
 
-    if t == 'lambda':
+    if t == 'lam':
         var_name = expr[1]
         body = expr[2]
 
@@ -224,11 +205,13 @@ def lambda_to_sic(expr, graph, env=None):
         d = graph.create_node('delta')
         d.var_name = var_name
 
+        # Record binder delta in env so that nested lambdas see it (though we never re‐use delta for occurrences)
         new_env = env.copy()
         new_env[var_name] = d
 
         body_node = lambda_to_sic(body, graph, new_env)
 
+        # Connect the binder gamma → delta on (port1, port0), and the gamma → body on (port2, port0)
         graph.connect(g, 1, d, 0)
         graph.connect(g, 2, body_node, 0)
 
@@ -236,135 +219,99 @@ def lambda_to_sic(expr, graph, env=None):
 
     if t == 'app':
         g = graph.create_node('gamma')
-        func_node = lambda_to_sic(expr[1], graph, env)
-        arg_node = lambda_to_sic(expr[2], graph, env)
-        graph.connect(g, 1, func_node, 0)
-        graph.connect(g, 2, arg_node, 0)
+        f_node = lambda_to_sic(expr[1], graph, env)
+        a_node = lambda_to_sic(expr[2], graph, env)
+        graph.connect(g, 1, f_node, 0)
+        graph.connect(g, 2, a_node, 0)
         return g
 
-# SIC to Lambda Back-Translation
-def sic_to_lambda(node, visited=None):
-    if visited is None:
-        visited = set()
+    raise ValueError("Unknown node type in lambda AST")
 
-    if node.node_type == 'gamma':
-        if node.id in visited:
-            return ('var', '?')
-        visited.add(node.id)
+# ————————————————————————————————
+# UPDATED sic_to_lambda
+# ————————————————————————————————
+def sic_to_lambda(node, visited_ids=None):
+    """
+    Reconstructs a lambda AST from the SIC graph, under the assumption that:
+      • Every real λ‐binder is one gamma whose port 1 goes to a Delta(d) 
+        such that delta.ports[0] == (that gamma, 1).
+      • All other “var occurrences” are stand‐alone Epsilon(var_name).
+      • So, whenever we see gamma.port1 → a delta whose port0 is back here, that gamma is a λ‐abstraction.
+      • Otherwise, gamma is a (func arg) application.
+    """
+    if visited_ids is None:
+        visited_ids = set()
+    if node.id in visited_ids:
+        return ('var', '?')  # break cycles
+    visited_ids.add(node.id)
 
     if node.node_type == 'epsilon':
+        # Epsilon always corresponds to a “(var name)”
         return ('var', node.var_name or 'free_var')
 
     if node.node_type == 'delta':
+        # A delta unconnected to a gamma (as port0) cannot happen under our new scheme,
+        # but if we do see one, treat it just as a var too.
         return ('var', node.var_name or '?')
 
     if node.node_type == 'gamma':
-        n1, _ = node.ports[1]
-        n2, _ = node.ports[2]
-        if n1.node_type == 'delta':
-            var = sic_to_lambda(n1, visited)
-            body = sic_to_lambda(n2, visited)
-            return ('lambda', var[1], body)
-        func = sic_to_lambda(n1, visited)
-        arg = sic_to_lambda(n2, visited)
+        # Look at its two auxiliary ports:
+        #   ports[1] == (n1, p1), ports[2] == (n2, p2).
+        n1, p1 = node.ports[1]
+        n2, p2 = node.ports[2]
+
+        # If n1 is a Delta AND that delta’s port0 points back to (this gamma, 1),
+        # then we know “gamma” is a λ‐abstraction for var = n1.var_name.
+        if n1.node_type == 'delta' and n1.ports[0] == (node, 1):
+            var = n1.var_name
+            body = sic_to_lambda(n2, visited_ids)
+            return ('lam', var, body)
+
+        # Otherwise, it is an application: ( func_expr ) ( arg_expr )
+        func = sic_to_lambda(n1, visited_ids)
+        arg  = sic_to_lambda(n2, visited_ids)
         return ('app', func, arg)
 
-def lambda_expr_to_str(expr):
-    t = expr[0]
-    if t == 'var':
-        return expr[1]
-    if t == 'lambda':
-        return f"λ{expr[1]}.{lambda_expr_to_str(expr[2])}"
-    if t == 'app':
-        left = lambda_expr_to_str(expr[1])
-        right = lambda_expr_to_str(expr[2])
-        if expr[1][0] == 'lambda':
-            left = f"({left})"
-        if expr[2][0] == 'app' or expr[2][0] == 'lambda':
-            right = f"({right})"
-        return f"{left} {right}"
-    return '?'
+    # Fallback (shouldn’t happen):
+    return ('var', '?')
 
-    # Define Unary Numbers as Strings
-def test_unary_numbers():
-    zero = "λf.λx.x"  # 0
-    one = "λf.λx.f x"  # 1
-    two = "λf.λx.f (f x)"  # 2
-    three = "λf.λx.f (f (f x))"  # 3
-    increment = "λn.λf.λx.f (n f x)"  # Increment: n + 1
-    add = "λn.λm.λf.λx.n f (m f x)"  # Add: n + m
-    print("Testing Unary Numbers and Operations...")
-    # 1 + 1 = 2
-    one_plus_one = f"({add}) ({one}) ({one})"  # Add 1 and 1
-    g = lambda_to_sic(parse_lambda_expr(one_plus_one))
-    simulate(g)
-    print("1 + 1 =", unparse_lambda_expr(sic_to_lambda(g)))
-    # # 2 + 3 = 5
-    two_plus_three = f"({add}) ({two}) ({three})"  # Add 2 and 3
-    g = lambda_to_sic(parse_lambda_expr(two_plus_three))
-    simulate(g)
-    print("2 + 3 =", unparse_lambda_expr(sic_to_lambda(g)))
-
-    # Increment 2 = 3
-    inc_two = f"({increment}) ({two})"  # Increment 2
-    g = lambda_to_sic(parse_lambda_expr(inc_two))
-    simulate(g)
-    print("Increment 2 =", unparse_lambda_expr(sic_to_lambda(g)))
-
-    # # Run Tests
-    # test_unary_numbers()
-
-def test_parsing_and_simulation():
-    zero_str = "λf.λx.x"  
-    one_str = "λf.λx.f x"  
-    two_str = "λf.λx.f (f x)"  
-    three_str = "λf.λx.f (f (f x))"  
-
-    increment_str = "λn.λf.λx.f (n f x)"  
-    add_str = "λn.λm.λf.λx.n f (m f x)"  
-
-    # 2. Expected token structures (AST tuples) for checking parser correctness
-    zero_ast = ('lambda', 'f', ('lambda', 'x', ('var', 'x')))
-    one_ast = ('lambda', 'f', ('lambda', 'x', ('app', ('var', 'f'), ('var', 'x'))))
-    two_ast = ('lambda', 'f', ('lambda', 'x', ('app', ('var', 'f'), ('app', ('var', 'f'), ('var', 'x')))))
-    three_ast = ('lambda', 'f', ('lambda', 'x', ('app', ('var', 'f'), ('app', ('var', 'f'), ('app', ('var', 'f'), ('var', 'x'))))))
-
-    increment_ast = ('lambda', 'n', ('lambda', 'f', ('lambda', 'x', ('app', ('var', 'f'), ('app', ('app', ('var', 'n'), ('var', 'f')), ('var', 'x'))))))
-    add_ast = ('lambda', 'n', ('lambda', 'm', ('lambda', 'f', ('lambda', 'x', ('app', ('app', ('var', 'n'), ('var', 'f')), ('app', ('app', ('var', 'm'), ('var', 'f')), ('var', 'x')))))))
-
-    test_cases = [
-        (zero_str, zero_ast, "zero"),
-        (one_str, one_ast, "one"),
-        (two_str, two_ast, "two"),
-        (three_str, three_ast, "three"),
-        (increment_str, increment_ast, "increment"),
-        (add_str, add_ast, "add"),
-    ]
-
-    for s, expected_ast, name in test_cases:
-        print(f"\nTesting parsing for {name}:")
-        ast = parse_lambda_expr(s)
-        print("Parsed AST:", ast)
-        assert ast == expected_ast, f"Parser output does not match expected AST for {name}"
-
-        g = lambda_to_sic(ast)
-        simulate(g)
-        back_ast = sic_to_lambda(g)
-        # print("Back-translated lambda:", unparse_lambda(back_ast))
-# test_parsing_and_simulation()
-
-
+# ————————————————————————————————
+# TEST ON “λf.λx.f (f (f x))”
+# ————————————————————————————————
 if __name__ == "__main__":
-    expr_str = "λx.x (y z)"
+    # expr_str = "λf.λx.f (f (f x))"
+    # print("Input: ", expr_str)
+    # parsed = parse_lambda_expr(expr_str)
+    # print("Parsed AST: ", parsed)
 
-    print(f"Input: {expr_str}")
-    parsed = parse_lambda_expr(expr_str)
-    print("Parsed:", parsed)
+    # g = Graph()
+    # root = lambda_to_sic(parsed, g)
+    # back_expr = sic_to_lambda(root)
+    # back_str = lambda_expr_to_str(back_expr)
+    # print("Back-translated Lambda:", back_str)
+    # exit()
+    increment = "λn.λf.λx.f (n f x)"
+    one       = "λf.λx.f x"
+    two       = "λf.λx.f (f x)"
+
+    # (2) Parse all three into our AST form:
+    parsed_inc = parse_lambda_expr(increment)
+    parsed_one = parse_lambda_expr(one)
+    parsed_two = parse_lambda_expr(two)
+    parsed_incr_one = parse_lambda_expr(f"{increment} {one}")
 
     g = Graph()
-    root = lambda_to_sic(parsed, g)
+    n = lambda_to_sic(parsed_incr_one, g)
+    # n = lambda_to_sic(parsed_one, g)
     simulate(g)
 
-    back_expr = sic_to_lambda(root)
-    back_str = lambda_expr_to_str(back_expr)
-    print("Back-translated Lambda:", back_str)
+    result_ast = sic_to_lambda(n)
+
+    result_str = lambda_expr_to_str(result_ast)
+
+    print("Expected two   =", two)
+    print("Result of (increment one) →", result_str)
+
+    assert result_str == two, f"FAIL: got {result_str} instead of {two}"
+    print("✔︎  (increment one)  ≡ two")
+

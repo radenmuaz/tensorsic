@@ -1,6 +1,6 @@
 
 def test_unary_numbers():
-    # zero = "λf.λx.x"  # 0
+    zero = "λf.λx.x"  # 0
     one = "λf.λx.f x"  # 1
     two = "λf.λx.f (f x)"  # 2
     three = "λf.λx.f (f (f x))"  # 3

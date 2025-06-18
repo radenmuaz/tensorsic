@@ -1,590 +1,668 @@
-import re
-import uuid
+# Fixing f-string literal braces issues and rerunning the implementation and test.
+
+import sys
+import threading
 from collections import deque
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 1) LEXER / PARSER (unchanged from your starting point)
-# ─────────────────────────────────────────────────────────────────────────────
+# AST definitions
+class Term:
+    pass
 
-TOKEN_LAMBDA     = 'LAMBDA'
-TOKEN_DOT        = 'DOT'
-TOKEN_LPAREN     = 'LPAREN'
-TOKEN_RPAREN     = 'RPAREN'
-TOKEN_IDENTIFIER = 'IDENTIFIER'
-TOKEN_EOF        = 'EOF'
+class Var(Term):
+    def __init__(self, name: int):
+        self.name = name
 
-def tokenize(expr):
-    tokens = []
-    i = 0
-    while i < len(expr):
-        c = expr[i]
-        if c.isspace():
-            i += 1
-            continue
-        if c == 'λ':
-            tokens.append((TOKEN_LAMBDA, c))
-            i += 1
-        elif c == '.':
-            tokens.append((TOKEN_DOT, c))
-            i += 1
-        elif c == '(':
-            tokens.append((TOKEN_LPAREN, c))
-            i += 1
-        elif c == ')':
-            tokens.append((TOKEN_RPAREN, c))
-            i += 1
+    def __str__(self):
+        return name_str(self.name)
+    __repr__ = __str__
+
+class Let(Term):
+    def __init__(self, name: int, t1: Term, t2: Term):
+        self.name = name
+        self.t1 = t1
+        self.t2 = t2
+
+    def __str__(self):
+        return f"! {name_str(self.name)} = {self.t1}; {self.t2}"
+    __repr__ = __str__
+
+class Era(Term):
+    def __str__(self):
+        return "*"
+    __repr__ = __str__
+
+class Sup(Term):
+    def __init__(self, label: int, left: Term, right: Term):
+        self.label = label
+        self.left = left
+        self.right = right
+
+    def __str__(self):
+        l = self.label
+        if l == 0:
+            return "{" + f"{self.left},{self.right}" + "}"
+        elif l == 1:
+            return "<" + f"{self.left},{self.right}" + ">"
         else:
-            match = re.match(r"[a-zA-Z_]\w*", expr[i:])
-            if match:
-                ident = match.group(0)
-                tokens.append((TOKEN_IDENTIFIER, ident))
-                i += len(ident)
-            else:
-                raise SyntaxError(f"Unexpected character: {c}")
-    tokens.append((TOKEN_EOF, None))
-    return tokens
+            # literal braces with f-string: use double braces
+            return f"&{l}{{{self.left},{self.right}}}"
+    __repr__ = __str__
 
-class Parser:
-    def __init__(self, tokens):
-        self.tokens = tokens
-        self.pos = 0
-        self.current = tokens[0]
+class Dup(Term):
+    def __init__(self, label: int, x: int, y: int, val: Term, body: Term):
+        self.label = label
+        self.x = x
+        self.y = y
+        self.val = val
+        self.body = body
 
-    def eat(self, token_type):
-        if self.current[0] == token_type:
-            self.pos += 1
-            self.current = self.tokens[self.pos]
+    def __str__(self):
+        l = self.label
+        xs = name_str(self.x)
+        ys = name_str(self.y)
+        if l == 0:
+            return f"! {{{xs},{ys}}} = {self.val}; {self.body}"
+        elif l == 1:
+            return f"! <{xs},{ys}> = {self.val}; {self.body}"
         else:
-            raise SyntaxError(f"Expected {token_type}, got {self.current[0]}")
+            return f"! &{l}{{{xs},{ys}}} = {self.val}; {self.body}"
+    __repr__ = __str__
 
-    def parse(self):
-        expr = self.parse_expr()
-        if self.current[0] != TOKEN_EOF:
-            raise SyntaxError("Unexpected token after expression")
-        return expr
+class Lam(Term):
+    def __init__(self, label: int, x: int, body: Term):
+        self.label = label
+        self.x = x
+        self.body = body
 
-    def parse_expr(self):
-        term = self.parse_term()
-        while True:
-            if self.current[0] in (TOKEN_LAMBDA, TOKEN_IDENTIFIER, TOKEN_LPAREN):
-                right = self.parse_term()
-                term = ('app', term, right)
-            else:
-                break
-        return term
-
-    def parse_term(self):
-        if self.current[0] == TOKEN_LAMBDA:
-            return self.parse_abstraction()
-        elif self.current[0] == TOKEN_IDENTIFIER:
-            name = self.current[1]
-            self.eat(TOKEN_IDENTIFIER)
-            return ('var', name)
-        elif self.current[0] == TOKEN_LPAREN:
-            self.eat(TOKEN_LPAREN)
-            expr = self.parse_expr()
-            self.eat(TOKEN_RPAREN)
-            return expr
+    def __str__(self):
+        l = self.label
+        xs = name_str(self.x)
+        if l == 0:
+            return f"λ{xs}.{self.body}"
+        elif l == 1:
+            return f"Λ{xs}.{self.body}"
         else:
-            raise SyntaxError(f"Unexpected token: {self.current[0]}")
+            return f"&{l} λ{xs}.{self.body}"
+    __repr__ = __str__
 
-    def parse_abstraction(self):
-        self.eat(TOKEN_LAMBDA)
-        if self.current[0] != TOKEN_IDENTIFIER:
-            raise SyntaxError("Expected identifier after λ")
-        var = self.current[1]
-        self.eat(TOKEN_IDENTIFIER)
-        self.eat(TOKEN_DOT)
-        body = self.parse_expr()
-        return ('lam', var, body)
+class App(Term):
+    def __init__(self, label: int, func: Term, arg: Term):
+        self.label = label
+        self.func = func
+        self.arg = arg
 
-def parse_lambda(expr):
-    tokens = tokenize(expr)
-    parser = Parser(tokens)
-    return parser.parse()
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 2) COUNT FREE/BIND Occurrences (two small helpers)
-# ─────────────────────────────────────────────────────────────────────────────
-
-def free_vars(expr):
-    kind = expr[0]
-    if kind == 'var':
-        return {expr[1]}
-    elif kind == 'lam':
-        param, body = expr[1], expr[2]
-        return free_vars(body) - {param}
-    elif kind == 'app':
-        return free_vars(expr[1]) | free_vars(expr[2])
-    return set()
-
-def count_occurrences(var, expr):
-    kind = expr[0]
-    if kind == 'var':
-        return 1 if expr[1] == var else 0
-    elif kind == 'lam':
-        param, body = expr[1], expr[2]
-        if param == var:
-            return 0
-        return count_occurrences(var, body)
-    elif kind == 'app':
-        return count_occurrences(var, expr[1]) + count_occurrences(var, expr[2])
-    return 0
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 3) CORE SIC‐GRAPH DATA STRUCTURES
-#    - Port:   Has a single “connection” pointer to another Port
-#    - Node:   Has 1 principal port + up to 2 aux ports
-#    - VarNode: distinguishes bound‐vs‐free by a flag
-#    - Gamma, Delta, Epsilon: constructed via Node(…)
-# ─────────────────────────────────────────────────────────────────────────────
-
-class Port:
-    def __init__(self, node, name):
-        self.node = node      # back‐pointer to the parent Node
-        self.name = name      # 'principal', 'aux1', or 'aux2'
-        self.connection = None
-
-    def connect(self, other):
-        # Wire this port ↔ other port
-        self.connection = other
-        other.connection = self
-
-    def disconnect(self):
-        if self.connection:
-            other = self.connection
-            self.connection = None
-            other.connection = None
-
-    def is_active(self):
-        # Active iff a principal‐port connected to another principal
-        return (self.name == 'principal' 
-                and self.connection 
-                and self.connection.name == 'principal')
-
-    def __repr__(self):
-        return f"Port({self.node}, {self.name})"
-
-class Node:
-    def __init__(self, node_type, subtype=None, var_name=None):
-        self.id = str(uuid.uuid4())[:8]
-        self.node_type = node_type    # 'GAMMA', 'DELTA', 'EPSILON', 'VAR'
-        self.subtype = subtype        # for GAMMA: 'LAMBDA' or 'APPLY'
-        self.var_name = var_name      # for GAMMA‐LAMBDA (the λ‐binder name)
-        # Always have a principal port
-        self.principal = Port(self, 'principal')
-        # Add aux ports only if needed
-        if node_type == 'GAMMA':
-            self.aux1 = Port(self, 'aux1')
-            self.aux2 = Port(self, 'aux2')
-        elif node_type == 'DELTA':
-            self.aux1 = Port(self, 'aux1')
-            self.aux2 = Port(self, 'aux2')
-        else:  # EPSILON or VAR
-            self.aux1 = None
-            self.aux2 = None
-
-    def __repr__(self):
-        if self.node_type == 'GAMMA':
-            return f"Node(Γ-{self.subtype}-{self.var_name or ''})"
-        elif self.node_type == 'DELTA':
-            return "Node(Δ)"
-        elif self.node_type == 'EPSILON':
-            return "Node(ε)"
-        else:  # VAR
-            return f"Node(VAR-{self.var_name})"
-
-class VarNode(Node):
-    def __init__(self, var_name, bound):
-        super().__init__('VAR', var_name=var_name)
-        self.bound = bound  # True if bound w.r.t. some λ, False if “free” in the original program
-
-    def __repr__(self):
-        return f"VarNode({'B' if self.bound else 'F'}-{self.var_name})"
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 4) BUILDING A DELTA‐TREE for “k > 1” copies of a bound variable
-#    so we can fan out to exactly k occurrences
-# ─────────────────────────────────────────────────────────────────────────────
-
-def build_delta_tree(k, graph):
-    """
-    If k == 1, no δ‐node is needed: return (None, [“direct leaf”]).
-    If k == 2, create a single δ with 2 outputs.
-    If k > 2, build a small binary tree of Δ‐nodes so that exactly k "leaf ports" appear.
-    Returns (δ_root, leaf_ports_list).
-    """
-    if k == 1:
-        return (None, None)
-
-    if k == 2:
-        delta = Node('DELTA')
-        graph.append(delta)
-        return (delta, [delta.aux1, delta.aux2])
-
-    # Split k into two parts: left_count = k//2, right_count = k - left_count
-    left_count = k // 2
-    right_count = k - left_count
-    root = Node('DELTA')
-    graph.append(root)
-
-    # Build subtrees
-    left_root, left_leaves = build_delta_tree(left_count, graph)
-    right_root, right_leaves = build_delta_tree(right_count, graph)
-
-    # Wire root’s aux‐ports
-    if left_root is None:
-        # left_count == 1: use root.aux1 directly as a leaf
-        pass
-    else:
-        root.aux1.connect(left_root.principal)
-
-    if right_root is None:
-        # right_count == 1
-        pass
-    else:
-        root.aux2.connect(right_root.principal)
-
-    # Collect leaves:
-    leaves = []
-    if left_root is None:
-        # root.aux1 is a leaf‐port
-        leaves.append(root.aux1)
-    else:
-        leaves.extend(left_leaves)
-
-    if right_root is None:
-        leaves.append(root.aux2)
-    else:
-        leaves.extend(right_leaves)
-
-    return (root, leaves)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 5) THE ACTUAL build_sic FUNCTION (AST → SIC GRAPH)
-#
-#    We carry around an “env = set of currently‐bound λ‐variables.”
-#
-#    Returns: (root_port, occ_map) where
-#       – root_port is the single “output” port for this subtree
-#       – occ_map maps each bound‐var‐name → [list of Ports]
-#         representing exactly those occurrences (un‐under any inner λ for that name).
-# ─────────────────────────────────────────────────────────────────────────────
-
-def build_sic(expr, graph, env):
-    kind = expr[0]
-
-    # 5.1) VARIABLE LEAF
-    if kind == 'var':
-        var_name = expr[1]
-        if var_name in env:
-            node = VarNode(var_name, bound=True)
+    def __str__(self):
+        l = self.label
+        if l == 0:
+            return f"({self.func} {self.arg})"
+        elif l == 1:
+            return f"[{self.func} {self.arg}]"
         else:
-            node = VarNode(var_name, bound=False)
-        graph.append(node)
-        # This is a single occurrence of var_name
-        return node.principal, {var_name: [node.principal]}
-
-    # 5.2) LAMBDA
-    elif kind == 'lam':
-        _, var, body = expr
-        # Build the body first, adding var to the bound‐env
-        new_env = set(env)
-        new_env.add(var)
-        p_body, occ_map_body = build_sic(body, graph, new_env)
-
-        # How many “free occurrences” of var are in body (not shadowed by deeper lambdas)?
-        var_occ_ports = occ_map_body.get(var, [])
-        k = len(var_occ_ports)
-
-        # Create a λ‐Γ node
-        gamma = Node('GAMMA', subtype='LAMBDA', var_name=var)
-        graph.append(gamma)
-
-        # 5.2.1) VAR‐PORT (aux1) handling
-        if k == 0:
-            eps = Node('EPSILON')
-            graph.append(eps)
-            gamma.aux1.connect(eps.principal)
-
-        elif k == 1:
-            gamma.aux1.connect(var_occ_ports[0])
-
-        else:
-            # k > 1: build a Δ‐tree so that we have k leaves
-            delta_root, leaves = build_delta_tree(k, graph)
-            gamma.aux1.connect(delta_root.principal)
-            for leaf_port, occ_port in zip(leaves, var_occ_ports):
-                leaf_port.connect(occ_port)
-
-        # 5.2.2) BODY‐PORT (aux2)
-        gamma.aux2.connect(p_body)
-
-        # Remove var from the occ_map for children before returning upward
-        new_occ_map = {v: ps for v, ps in occ_map_body.items() if v != var}
-        return gamma.principal, new_occ_map
-
-    # 5.3) APPLICATION
-    elif kind == 'app':
-        _, f, m = expr
-
-        p_f, occ_f = build_sic(f, graph, env)
-        p_m, occ_m = build_sic(m, graph, env)
-
-        gamma = Node('GAMMA', subtype='APPLY')
-        graph.append(gamma)
-
-        # Connect principal (Function) ↔ p_f
-        gamma.principal.connect(p_f)
-
-        # Connect argument
-        gamma.aux1.connect(p_m)
-
-        # Merge occurrence‐maps
-        merged = {}
-        for v, ports in occ_f.items():
-            merged.setdefault(v, []).extend(ports)
-        for v, ports in occ_m.items():
-            merged.setdefault(v, []).extend(ports)
-
-        # This application’s “result” is gamma.aux2 (dangling)
-        return gamma.aux2, merged
-
-    else:
-        raise RuntimeError("Unknown AST node type in build_sic")
-
-def build_graph(ast_expr):
-    graph = []
-    root_port, occ_map = build_sic(ast_expr, graph, set())
-    return graph, root_port
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 6) SIC REDUCTION:  “FIND ACTIVE PAIRS” + “FIRE THE 6 RULES”
-#
-#    We only need (ΓΛ‐Γ@), (Δ‐Δ), and (Δ‐ε / ε‐Δ) for ordinary λ‐calculus.
-#    (We never introduce ζ, and we never intentionally “unfold” ε‐ε→δ/ζ.)
-# ─────────────────────────────────────────────────────────────────────────────
-
-def reduce_graph(graph):
-    def find_active_pairs():
-        pairs = []
-        for node in list(graph):
-            p = node.principal
-            q = p.connection
-            if q and q.name == 'principal' and p.node != q.node:
-                # only record once (p,q) or (q,p)
-                if (q, p) not in pairs:
-                    pairs.append((p, q))
-        return pairs
-
-    def remove_node(node):
-        # Disconnect all ports, then remove from graph list
-        node.principal.disconnect()
-        if node.aux1:
-            node.aux1.disconnect()
-        if node.aux2:
-            node.aux2.disconnect()
-        if node in graph:
-            graph.remove(node)
-
-    changed = True
-    while changed:
-        changed = False
-        pairs = find_active_pairs()
-        if not pairs:
-            break
-
-        for p, q in pairs:
-            n1, n2 = p.node, q.node
-
-            # 6.1) ΓΛ – Γ@ annihilation
-            if n1.node_type == 'GAMMA' and n2.node_type == 'GAMMA':
-                if n1.subtype == 'LAMBDA' and n2.subtype == 'APPLY':
-                    lam, app = n1, n2
-                elif n1.subtype == 'APPLY' and n2.subtype == 'LAMBDA':
-                    lam, app = n2, n1
-                else:
-                    continue  # not a reducible λ‐@ pair
-
-                # The “var” port on lam is lam.aux1; the “arg” port on app is app.aux1.
-                var_branch_port = lam.aux1.connection    # E.g. a BVarNode‐port
-                arg_branch_port = app.aux1.connection    # E.g. VarNode (free or BVar) for the argument
-                body_branch_port = lam.aux2.connection   # entire subgraph of M
-                out_port = app.aux2                      # “where (F M)'s result flows”
-
-                # If there was a bound‐var node in the graph, remove it after splicing
-                var_node = var_branch_port.node if var_branch_port else None
-
-                # Disconnect the two principals
-                lam.principal.disconnect()
-                app.principal.disconnect()
-                # Disconnect the aux links
-                lam.aux1.disconnect()
-                app.aux1.disconnect()
-                lam.aux2.disconnect()
-                app.aux2.disconnect()
-
-                #  a) Rewire “argument” into “var occurrence”
-                if var_branch_port and arg_branch_port:
-                    # Connect var_occurrence_port ↔ argument_port
-                    arg_branch_port.connect(var_branch_port)
-
-                    # If that var_node was a bound‐var “placeholder,” remove it now
-                    if isinstance(var_node, VarNode) and var_node.bound:
-                        remove_node(var_node)
-
-                #  b) Rewire “body” into “output”
-                if body_branch_port:
-                    body_branch_port.connect(out_port)
-
-                # Finally remove the two Γ‐nodes
-                remove_node(lam)
-                remove_node(app)
-
-                changed = True
-                break
-
-            # 6.2) Δ – Δ (annihilation)
-            if n1.node_type == 'DELTA' and n2.node_type == 'DELTA':
-                d1, d2 = n1, n2
-                a1, b1 = d1.aux1, d1.aux2
-                a2, b2 = d2.aux1, d2.aux2
-                # Disconnect principals
-                d1.principal.disconnect()
-                d2.principal.disconnect()
-                # Splice: a1↔a2, b1↔b2
-                a1.disconnect(); a2.disconnect(); a1.connect(a2)
-                b1.disconnect(); b2.disconnect(); b1.connect(b2)
-                remove_node(d1)
-                remove_node(d2)
-                changed = True
-                break
-
-            # 6.3) Δ – ε  (or ε – Δ) (erasure)
-            if ((n1.node_type == 'DELTA' and n2.node_type == 'EPSILON') or
-                (n2.node_type == 'DELTA' and n1.node_type == 'EPSILON')):
-                d = n1 if n1.node_type == 'DELTA' else n2
-                e = n2 if d is n1 else n1
-                a, b = d.aux1, d.aux2
-                # Disconnect principals
-                d.principal.disconnect()
-                e.principal.disconnect()
-                # Remove Δ & ε
-                remove_node(d)
-                remove_node(e)
-                # For each of Δ’s two auxiliary ports, attach a fresh ε
-                eps1 = Node('EPSILON')
-                eps2 = Node('EPSILON')
-                graph.append(eps1)
-                graph.append(eps2)
-                a.disconnect(); a.connect(eps1.principal)
-                b.disconnect(); b.connect(eps2.principal)
-                changed = True
-                break
-
-        # end for pairs
-    return
+            return f"&{l} ({self.func} {self.arg})"
+    __repr__ = __str__
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 7) READ‐BACK a LAMBDA‐AST from a (fully‐reduced) SIC graph
-#
-#    We look for a single “root” principal that is not connected to any other principal.
-#    Then:
-#      – If it’s a VarNode(bound=False), return ('var', name).
-#      – If it’s a Γ‐LAMBDA, reconstruct ('lam', var, body).
-#      – Otherwise fail / return None.
-# ─────────────────────────────────────────────────────────────────────────────
+# Globals for substitution and fresh names
+_gSUBST = {}
+_gFRESH = 0
+_gINTERS = 0
+_gSUBST_lock = threading.Lock()
+_gFRESH_lock = threading.Lock()
+_gINTERS_lock = threading.Lock()
 
-def find_root_port(graph):
-    # Collect all “dangling principals” (i.e. principal ports not connected to another principal).
-    roots = []
-    for node in graph:
-        p = node.principal
-        if p.connection is None or p.connection.name != 'principal':
-            roots.append(p)
-    if not roots:
-        return None
-    # Prefer a free VarNode if present
-    for p in roots:
-        if isinstance(p.node, VarNode) and not p.node.bound:
-            return p
-    # Otherwise prefer a gamma‐lambda
-    for p in roots:
-        if p.node.node_type == 'GAMMA' and p.node.subtype == 'LAMBDA':
-            return p
-    # Else just take the first
-    return roots[0]
+def set_subst(name: int, term: Term):
+    with _gSUBST_lock:
+        _gSUBST[name] = term
 
-def read_back(port, visited=None):
-    if visited is None:
-        visited = set()
-    node = port.node
-    if node in visited:
-        return None
-    visited.add(node)
-
-    if node.node_type == 'VAR':
-        # Whether bound or not, we emit ('var', var_name)
-        return ('var', node.var_name)
-
-    if node.node_type == 'GAMMA' and node.subtype == 'LAMBDA':
-        var = node.var_name
-        if node.aux2.connection:
-            body_ast = read_back(node.aux2.connection, visited)
-        else:
-            body_ast = None
-        return ('lam', var, body_ast)
-
-    if node.node_type == 'GAMMA' and node.subtype == 'APPLY':
-        # In a “fully‐reduced” graph we actually shouldn’t see any Γ@ left,
-        # but if we do, read it as ('app', …).
-        f_port = node.principal.connection
-        a_port = node.aux1.connection
-        if not f_port or not a_port:
-            return None
-        func_ast = read_back(f_port, visited)
-        arg_ast  = read_back(a_port, visited)
-        return ('app', func_ast, arg_ast)
-
+def get_subst(name: int):
+    with _gSUBST_lock:
+        if name in _gSUBST:
+            return _gSUBST.pop(name)
     return None
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 8) A VERY SMALL TEST SUITE
-#    We confirm that our SIC reduction agrees with β‐reduction on two simple examples:
-#
-#      A)  (λx. x) y   ⇒  y
-#      B)  ((λx. λy. x) a) b  ⇒  a
-#
-#    If you want more “church‐numeral” testing, you can extend this in the same style.
-# ─────────────────────────────────────────────────────────────────────────────
+def fresh():
+    global _gFRESH
+    with _gFRESH_lock:
+        n = _gFRESH
+        _gFRESH += 1
+    return n
 
-def test_sic_identity():
-    expr = "(λx. x) y"
-    ast = parse_lambda(expr)
-    graph, _ = build_graph(ast)
-    reduce_graph(graph)
-    root_port = find_root_port(graph)
-    final_ast = read_back(root_port)
-    assert final_ast == ('var', 'y'), f"Expected ('var','y'), got {final_ast}"
-    print("✔ SIC identity test passed: (λx.x) y  ⇒  y")
+def inc_inters():
+    global _gINTERS
+    with _gINTERS_lock:
+        _gINTERS += 1
 
-def test_sic_simple_app():
-    # ((λx. λy. x) a) b  ⇒  a
-    expr = "((λx. λy. x) a) b"
-    ast = parse_lambda(expr)
-    graph, _ = build_graph(ast)
-    reduce_graph(graph)
-    root_port = find_root_port(graph)
-    final_ast = read_back(root_port)
-    assert final_ast == ('var', 'a'), f"Expected ('var','a'), got {final_ast}"
-    print("✔ SIC simple‐app test passed: ((λx.λy.x) a) b  ⇒  a")
+def read_inters():
+    with _gINTERS_lock:
+        return _gINTERS
 
-def test_sic_simple():
-    test_sic_identity()
-    test_sic_simple_app()
+def name_str(k: int) -> str:
+    target = k + 1
+    queue = deque([""])
+    count = 0
+    while queue:
+        prefix = queue.popleft()
+        if count == target:
+            return prefix
+        count += 1
+        for c in map(chr, range(ord('a'), ord('z')+1)):
+            queue.append(c + prefix)
+    return f"v{k}"
 
-if __name__ == "__main__":
-    test_sic_simple()
+# Evaluation primitives
+def app_era(f: Term, arg: Term):
+    if isinstance(f, Era):
+        inc_inters()
+        return Era()
+    else:
+        raise RuntimeError("app_era: expected Era as first argument")
+
+def app_lam(f: Term, arg: Term, app_lab: int):
+    if isinstance(f, Lam):
+        lam_lab = f.label
+        nam = f.x
+        bod = f.body
+        inc_inters()
+        if lam_lab == app_lab:
+            set_subst(nam, arg)
+            return whnf(bod)
+        else:
+            y = fresh()
+            z = fresh()
+            set_subst(nam, Lam(app_lab, y, Var(z)))
+            inner = App(lam_lab, arg, Var(y))
+            newb = App(app_lab, bod, inner)
+            return whnf(Lam(lam_lab, z, newb))
+    else:
+        raise RuntimeError("app_lam: expected Lam as first argument")
+
+def app_sup(f: Term, arg: Term, app_lab: int):
+    if isinstance(f, Sup):
+        lab = f.label
+        left = f.left
+        right = f.right
+        inc_inters()
+        c0 = fresh()
+        c1 = fresh()
+        a0 = App(app_lab, left, Var(c0))
+        a1 = App(app_lab, right, Var(c1))
+        return whnf(Dup(lab, c0, c1, arg, Sup(lab, a0, a1)))
+    else:
+        raise RuntimeError("app_sup: expected Sup as first argument")
+
+def app_dup(term: Term):
+    if isinstance(term, App) and isinstance(term.arg, Dup):
+        app_lab = term.label
+        f = term.func
+        dup: Dup = term.arg
+        inc_inters()
+        return whnf(Dup(dup.label, dup.x, dup.y, dup.val, App(app_lab, f, dup.body)))
+    else:
+        raise RuntimeError("app_dup: expected App with Dup")
+
+def dup_era(dup_term: Dup, v: Term):
+    if isinstance(v, Era):
+        inc_inters()
+        set_subst(dup_term.x, Era())
+        set_subst(dup_term.y, Era())
+        return whnf(dup_term.body)
+    else:
+        raise RuntimeError("dup_era: expected Dup and Era")
+
+def dup_lam(dup_term: Dup, v: Term):
+    if isinstance(v, Lam):
+        inc_inters()
+        lam_lab = v.label
+        x = v.x
+        f = v.body
+        x0 = fresh()
+        x1 = fresh()
+        f0 = fresh()
+        f1 = fresh()
+        set_subst(dup_term.x, Lam(lam_lab, x0, Var(f0)))
+        set_subst(dup_term.y, Lam(lam_lab, x1, Var(f1)))
+        set_subst(x, Sup(dup_term.label, Var(x0), Var(x1)))
+        return whnf(Dup(dup_term.label, f0, f1, f, dup_term.body))
+    else:
+        raise RuntimeError("dup_lam: expected Dup and Lam")
+
+def dup_sup(dup_term: Dup, v: Term):
+    if isinstance(v, Sup):
+        inc_inters()
+        sup_lab = v.label
+        a = v.left
+        b = v.right
+        if dup_term.label == sup_lab:
+            set_subst(dup_term.x, a)
+            set_subst(dup_term.y, b)
+            return whnf(dup_term.body)
+        else:
+            a0 = fresh()
+            a1 = fresh()
+            b0 = fresh()
+            b1 = fresh()
+            set_subst(dup_term.x, Sup(sup_lab, Var(a0), Var(b0)))
+            set_subst(dup_term.y, Sup(sup_lab, Var(a1), Var(b1)))
+            inner = Dup(dup_term.label, b0, b1, b, dup_term.body)
+            return whnf(Dup(dup_term.label, a0, a1, a, inner))
+    else:
+        raise RuntimeError("dup_sup: expected Dup and Sup")
+
+def dup_dup(dup_term: Dup, v: Term):
+    if isinstance(v, Dup):
+        inc_inters()
+        # Mirror Haskell pattern; this may differ subtly
+        return whnf(Dup(dup_term.label, dup_term.x, dup_term.y, v.x, Dup(dup_term.label, v.x, v.y, v.val, dup_term.body)))
+    else:
+        raise RuntimeError("dup_dup: expected Dup with inner Dup")
+
+def whnf(term: Term) -> Term:
+    if isinstance(term, Var):
+        sub = get_subst(term.name)
+        if sub is not None:
+            return whnf(sub)
+        else:
+            return term
+    elif isinstance(term, Let):
+        set_subst(term.name, term.t1)
+        return whnf(term.t2)
+    elif isinstance(term, App):
+        f_whnf = whnf(term.func)
+        if isinstance(f_whnf, Lam):
+            return app_lam(f_whnf, term.arg, term.label)
+        elif isinstance(f_whnf, Sup):
+            return app_sup(f_whnf, term.arg, term.label)
+        elif isinstance(f_whnf, Era):
+            return app_era(f_whnf, term.arg)
+        elif isinstance(f_whnf, Dup):
+            return app_dup(App(term.label, f_whnf, term.arg))
+        else:
+            return App(term.label, f_whnf, term.arg)
+    elif isinstance(term, Dup):
+        v_whnf = whnf(term.val)
+        if isinstance(v_whnf, Lam):
+            return dup_lam(term, v_whnf)
+        elif isinstance(v_whnf, Sup):
+            return dup_sup(term, v_whnf)
+        elif isinstance(v_whnf, Era):
+            return dup_era(term, v_whnf)
+        elif isinstance(v_whnf, Dup):
+            return dup_dup(term, v_whnf)
+        else:
+            return Dup(term.label, term.x, term.y, v_whnf, term.body)
+    else:
+        return term
+
+def normal(term: Term) -> Term:
+    t_whnf = whnf(term)
+    if isinstance(t_whnf, Var):
+        return t_whnf
+    elif isinstance(t_whnf, Era):
+        return t_whnf
+    elif isinstance(t_whnf, Lam):
+        body_n = normal(t_whnf.body)
+        return Lam(t_whnf.label, t_whnf.x, body_n)
+    elif isinstance(t_whnf, App):
+        fn_n = normal(t_whnf.func)
+        arg_n = normal(t_whnf.arg)
+        return App(t_whnf.label, fn_n, arg_n)
+    elif isinstance(t_whnf, Sup):
+        left_n = normal(t_whnf.left)
+        right_n = normal(t_whnf.right)
+        return Sup(t_whnf.label, left_n, right_n)
+    elif isinstance(t_whnf, Dup):
+        val_n = normal(t_whnf.val)
+        body_n = normal(t_whnf.body)
+        return Dup(t_whnf.label, t_whnf.x, t_whnf.y, val_n, body_n)
+    else:
+        return t_whnf
+
+# Parser
+class ParseError(Exception):
+    pass
+
+class Parser:
+    def __init__(self, text: str):
+        self.text = text
+        self.pos = 0
+        self.len = len(text)
+        self.global_map = {}
+
+    def current(self):
+        if self.pos < self.len:
+            return self.text[self.pos]
+        return None
+
+    def eof(self):
+        return self.pos >= self.len
+
+    def advance(self, n=1):
+        self.pos += n
+
+    def skip_whitespace_and_comments(self):
+        while True:
+            while not self.eof() and self.current().isspace():
+                self.advance()
+            if self.pos+1 < self.len and self.text[self.pos:self.pos+2] == "//":
+                self.advance(2)
+                while not self.eof() and self.current() not in "\r\n":
+                    self.advance()
+                while not self.eof() and self.current() in "\r\n":
+                    self.advance()
+                continue
+            break
+
+    def match_string(self, s: str) -> bool:
+        self.skip_whitespace_and_comments()
+        if self.text.startswith(s, self.pos):
+            self.advance(len(s))
+            return True
+        return False
+
+    def expect_string(self, s: str):
+        if not self.match_string(s):
+            raise ParseError(f"Expected '{s}' at position {self.pos}")
+
+    def parse_natural(self) -> int:
+        self.skip_whitespace_and_comments()
+        start = self.pos
+        while not self.eof() and self.current().isdigit():
+            self.advance()
+        if start == self.pos:
+            raise ParseError(f"Expected natural number at position {self.pos}")
+        return int(self.text[start:self.pos])
+
+    def parseVarName(self) -> str:
+        self.skip_whitespace_and_comments()
+        if not self.eof() and self.current() == '$':
+            start = self.pos
+            self.advance()
+            while not self.eof() and (self.current().isalnum() or self.current() == '_'):
+                self.advance()
+            return self.text[start:self.pos]
+        else:
+            start = self.pos
+            if not self.eof() and (self.current().isalnum() or self.current() == '_'):
+                while not self.eof() and (self.current().isalnum() or self.current() == '_'):
+                    self.advance()
+                return self.text[start:self.pos]
+            else:
+                raise ParseError(f"Expected variable name at position {self.pos}")
+
+    def isGlobalName(self, name: str) -> bool:
+        return name.startswith('$')
+
+    def getGlobalName(self, gname: str) -> int:
+        if gname in self.global_map:
+            return self.global_map[gname]
+        else:
+            n = fresh()
+            self.global_map[gname] = n
+            return n
+
+    def bindVar(self, name: str, ctx: dict) -> (int, dict):
+        if self.isGlobalName(name):
+            n = self.getGlobalName(name)
+            return n, ctx
+        else:
+            n = fresh()
+            ctx2 = ctx.copy()
+            ctx2[name] = n
+            return n, ctx2
+
+    def getVar(self, name: str, ctx: dict) -> int:
+        if self.isGlobalName(name):
+            return self.getGlobalName(name)
+        else:
+            if name in ctx:
+                return ctx[name]
+            else:
+                raise ParseError(f"Unbound local variable: {name}")
+
+    def parse(self):
+        self.skip_whitespace_and_comments()
+        term = self.parseTerm({})
+        self.skip_whitespace_and_comments()
+        if not self.eof():
+            raise ParseError(f"Unexpected trailing input at position {self.pos}")
+        return term
+
+    def parseTerm(self, ctx: dict) -> Term:
+        self.skip_whitespace_and_comments()
+        pos0 = self.pos
+        for parse_fn in [self.parseApp, self.parseLet, self.parseLam, self.parseSup, self.parseDup]:
+            try:
+                return parse_fn(ctx)
+            except ParseError:
+                self.pos = pos0
+        return self.parseSimpleTerm(ctx)
+
+    def parseSimpleTerm(self, ctx: dict) -> Term:
+        self.skip_whitespace_and_comments()
+        if self.pos < self.len and self.current() == '*':
+            return self.parseEra()
+        elif self.pos < self.len and self.current() == '(':
+            self.expect_string('(')
+            t = self.parseTerm(ctx)
+            self.expect_string(')')
+            return t
+        else:
+            return self.parseVar(ctx)
+
+    def parseVar(self, ctx: dict) -> Term:
+        name = self.parseVarName()
+        n = self.getVar(name, ctx)
+        return Var(n)
+
+    def parseEra(self) -> Term:
+        self.expect_string('*')
+        return Era()
+
+    def parseLam(self, ctx: dict) -> Term:
+        self.skip_whitespace_and_comments()
+        pos0 = self.pos
+        if self.match_string("&"):
+            try:
+                lab = self.parse_natural()
+                if not self.match_string("λ"):
+                    raise ParseError("Expected λ after label in lambda")
+                varname = self.parseVarName()
+                n, ctx2 = self.bindVar(varname, ctx)
+                self.expect_string(".")
+                body = self.parseTerm(ctx2)
+                return Lam(lab, n, body)
+            except ParseError:
+                self.pos = pos0
+        if self.match_string("λ"):
+            varname = self.parseVarName()
+            n, ctx2 = self.bindVar(varname, ctx)
+            self.expect_string(".")
+            body = self.parseTerm(ctx2)
+            return Lam(0, n, body)
+        if self.match_string("Λ"):
+            varname = self.parseVarName()
+            n, ctx2 = self.bindVar(varname, ctx)
+            self.expect_string(".")
+            body = self.parseTerm(ctx2)
+            return Lam(1, n, body)
+        raise ParseError("Not a lambda")
+
+    def parseApp(self, ctx: dict) -> Term:
+        self.skip_whitespace_and_comments()
+        pos0 = self.pos
+        if self.match_string("&"):
+            try:
+                lab = self.parse_natural()
+                self.expect_string("(")
+                f = self.parseTerm(ctx)
+                self.skip_whitespace_and_comments()
+                a = self.parseTerm(ctx)
+                self.expect_string(")")
+                return App(lab, f, a)
+            except ParseError:
+                self.pos = pos0
+        if self.match_string("("):
+            f = self.parseTerm(ctx)
+            self.skip_whitespace_and_comments()
+            a = self.parseTerm(ctx)
+            self.expect_string(")")
+            return App(0, f, a)
+        if self.match_string("["):
+            f = self.parseTerm(ctx)
+            self.skip_whitespace_and_comments()
+            a = self.parseTerm(ctx)
+            self.expect_string("]")
+            return App(1, f, a)
+        raise ParseError("Not an application")
+
+    def parseSup(self, ctx: dict) -> Term:
+        self.skip_whitespace_and_comments()
+        pos0 = self.pos
+        if self.match_string("&"):
+            try:
+                lab = self.parse_natural()
+                self.expect_string("{")
+                a = self.parseTerm(ctx)
+                self.expect_string(",")
+                b = self.parseTerm(ctx)
+                self.expect_string("}")
+                return Sup(lab, a, b)
+            except ParseError:
+                self.pos = pos0
+        if self.match_string("{"):
+            a = self.parseTerm(ctx)
+            self.expect_string(",")
+            b = self.parseTerm(ctx)
+            self.expect_string("}")
+            return Sup(0, a, b)
+        if self.match_string("<"):
+            a = self.parseTerm(ctx)
+            self.expect_string(",")
+            b = self.parseTerm(ctx)
+            self.expect_string(">")
+            return Sup(1, a, b)
+        raise ParseError("Not a Sup")
+
+    def parseDup(self, ctx: dict) -> Term:
+        self.skip_whitespace_and_comments()
+        pos0 = self.pos
+        if self.match_string("!"):
+            pos1 = self.pos
+            if self.match_string("&"):
+                try:
+                    lab = self.parse_natural()
+                    if self.match_string("{"):
+                        name1 = self.parseVarName()
+                        self.expect_string(",")
+                        name2 = self.parseVarName()
+                        self.expect_string("}")
+                        self.expect_string("=")
+                        val = self.parseTerm(ctx)
+                        self.expect_string(";")
+                        n1, ctx1 = self.bindVar(name1, ctx)
+                        n2, ctx2 = self.bindVar(name2, ctx1)
+                        body = self.parseTerm(ctx2)
+                        return Dup(lab, n1, n2, val, body)
+                    else:
+                        raise ParseError("Expected { after !&label in Dup")
+                except ParseError:
+                    self.pos = pos0
+                    raise
+            else:
+                self.pos = pos1
+                if self.match_string("{"):
+                    name1 = self.parseVarName()
+                    self.expect_string(",")
+                    name2 = self.parseVarName()
+                    self.expect_string("}")
+                    self.expect_string("=")
+                    val = self.parseTerm(ctx)
+                    self.expect_string(";")
+                    n1, ctx1 = self.bindVar(name1, ctx)
+                    n2, ctx2 = self.bindVar(name2, ctx1)
+                    body = self.parseTerm(ctx2)
+                    return Dup(0, n1, n2, val, body)
+                self.pos = pos1
+                if self.match_string("<"):
+                    name1 = self.parseVarName()
+                    self.expect_string(",")
+                    name2 = self.parseVarName()
+                    self.expect_string(">")
+                    self.expect_string("=")
+                    val = self.parseTerm(ctx)
+                    self.expect_string(";")
+                    n1, ctx1 = self.bindVar(name1, ctx)
+                    n2, ctx2 = self.bindVar(name2, ctx1)
+                    body = self.parseTerm(ctx2)
+                    return Dup(1, n1, n2, val, body)
+        raise ParseError("Not a Dup")
+
+    def parseLet(self, ctx: dict) -> Term:
+        self.skip_whitespace_and_comments()
+        pos0 = self.pos
+        if self.match_string("!"):
+            name_token = self.parseVarName()
+            self.expect_string("=")
+            t1 = self.parseTerm(ctx)
+            self.expect_string(";")
+            n, ctx2 = self.bindVar(name_token, ctx)
+            t2 = self.parseTerm(ctx2)
+            return Let(n, t1, t2)
+        self.pos = pos0
+        raise ParseError("Not a Let")
+
+def parseIC(input_str: str) -> Term:
+    parser = Parser(input_str)
+    return parser.parse()
+
+def doParseIC(input_str: str) -> Term:
+    try:
+        return parseIC(input_str)
+    except ParseError as e:
+        print(f"Parse error: {e}", file=sys.stderr)
+        raise
+
+def test_term(input_str: str):
+    global _gINTERS, _gSUBST, _gFRESH
+    with _gINTERS_lock:
+        _gINTERS = 0
+    with _gSUBST_lock:
+        _gSUBST.clear()
+    with _gFRESH_lock:
+        _gFRESH = 0
+    term = doParseIC(input_str)
+    norm = normal(term)
+    inters = read_inters()
+    print(norm)
+    print(f"- WORK: {inters}")
+
+def test_ic():
+    s = """
+!F = λf.
+  !{f0,f1} = f;
+  !{f0,f1} = λx.(f0 (f1 x));
+  !{f0,f1} = λx.(f0 (f1 x));
+  !{f0,f1} = λx.(f0 (f1 x));
+  !{f0,f1} = λx.(f0 (f1 x));
+  !{f0,f1} = λx.(f0 (f1 x));
+  !{f0,f1} = λx.(f0 (f1 x));
+  !{f0,f1} = λx.(f0 (f1 x));
+  !{f0,f1} = λx.(f0 (f1 x));
+  λx.(f0 (f1 x));
+((F λnx.((nx λt0.λf0.f0) λt1.λf1.t1)) λT.λF.T)
+"""
+    test_term(s)
+    inters = read_inters()
+    print(f"- WORK: {inters}")
+
+# Run the test
+import sys
+sys.setrecursionlimit(10**6)
+
+test_ic()
+'''
+reference:
+λoeo.λseo.oeo
+- WORK: 5150
+- WORK: 5150
+'''

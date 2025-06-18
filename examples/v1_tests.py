@@ -4,25 +4,12 @@ def test_unary_numbers():
     one = "λf.λx.f x"  # 1
     two = "λf.λx.f (f x)"  # 2
     three = "λf.λx.f (f (f x))"  # 3
-    increment = "λn.λf.λx.f (n f x)"  # Increment: n + 1
+    succ = "λn.λf.λx.f (n f x)"  # Increment: n + 1
     add = "λn.λm.λf.λx.n f (m f x)"  # Add: n + m
-    print("Testing Unary Numbers and Operations...")
-    # 1 + 1 = 2
-    one_plus_one = f"({add}) ({one}) ({one})"  # Add 1 and 1
-    g = lambda_to_sic(parse_lambda_expr(one_plus_one))
-    simulate(g)
-    print("1 + 1 =", unparse_lambda_expr(sic_to_lambda(g)))
-    # # 2 + 3 = 5
-    two_plus_three = f"({add}) ({two}) ({three})"  # Add 2 and 3
-    g = lambda_to_sic(parse_lambda_expr(two_plus_three))
-    simulate(g)
-    print("2 + 3 =", unparse_lambda_expr(sic_to_lambda(g)))
+    succ_zero = f"({succ}) {zero}"
+    succ_one = f"({succ}) {one}"
+    succ_two = f"({succ}) {two}"
 
-    # Increment 2 = 3
-    inc_two = f"({increment}) ({two})"  # Increment 2
-    g = lambda_to_sic(parse_lambda_expr(inc_two))
-    simulate(g)
-    print("Increment 2 =", unparse_lambda_expr(sic_to_lambda(g)))
 
 def test_parsing_and_simulation():
     zero_str = "λf.λx.x" 

@@ -660,9 +660,3 @@ import sys
 sys.setrecursionlimit(10**6)
 
 test_ic()
-'''
-reference:
-λoeo.λseo.oeo
-- WORK: 5150
-- WORK: 5150
-'''

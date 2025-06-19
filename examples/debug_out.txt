@@ -1,0 +1,1861 @@
+! h = λa.! {b,c} = a; ! {e,f} = λd.(b (c d)); λg.(e (f g)); ((h λi.((i λj.λk.k) λl.λm.l)) λn.λo.n)
+----------------------------------------
+"LET"
+((λa.! {b,c} = a; ! {e,f} = λd.(b (c d)); λg.(e (f g)) λi.((i λj.λk.k) λl.λm.l)) λn.λo.n)
+----------------------------------------
+"APP"
+a <- λi.((i λj.λk.k) λl.λm.l)
+(! {b,c} = a; ! {e,f} = λd.(b (c d)); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+(! {b,c} = λi.((i λj.λk.k) λl.λm.l); ! {e,f} = λd.(b (c d)); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+b <- λp.r
+c <- λq.s
+i <- {p,q}
+(! {r,s} = ((i λj.λk.k) λl.λm.l); ! {e,f} = λd.(b (c d)); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+b <- λp.r
+c <- λq.s
+(! {r,s} = (({p,q} λj.λk.k) λl.λm.l); ! {e,f} = λd.(b (c d)); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"APP"
+b <- λp.r
+c <- λq.s
+(! {r,s} = (! {t,u} = λj.λk.k; {(p t),(q u)} λl.λm.l); ! {e,f} = λd.(b (c d)); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+b <- λp.r
+c <- λq.s
+j <- {v,w}
+t <- λv.x
+u <- λw.y
+(! {r,s} = (! {x,y} = λk.k; {(p t),(q u)} λl.λm.l); ! {e,f} = λd.(b (c d)); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+b <- λp.r
+c <- λq.s
+j <- {v,w}
+k <- {z,aa}
+t <- λv.x
+u <- λw.y
+x <- λz.ba
+y <- λaa.ca
+(! {r,s} = (! {ba,ca} = k; {(p t),(q u)} λl.λm.l); ! {e,f} = λd.(b (c d)); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+b <- λp.r
+c <- λq.s
+j <- {v,w}
+t <- λv.x
+u <- λw.y
+x <- λz.ba
+y <- λaa.ca
+(! {r,s} = (! {ba,ca} = {z,aa}; {(p t),(q u)} λl.λm.l); ! {e,f} = λd.(b (c d)); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+b <- λp.r
+c <- λq.s
+j <- {v,w}
+t <- λv.x
+u <- λw.y
+x <- λz.ba
+y <- λaa.ca
+ba <- z
+ca <- aa
+(! {r,s} = ({(p t),(q u)} λl.λm.l); ! {e,f} = λd.(b (c d)); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"APP"
+b <- λp.r
+c <- λq.s
+j <- {v,w}
+t <- λv.x
+u <- λw.y
+x <- λz.ba
+y <- λaa.ca
+ba <- z
+ca <- aa
+(! {r,s} = ! {da,ea} = λl.λm.l; {((p t) da),((q u) ea)}; ! {e,f} = λd.(b (c d)); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+b <- λp.r
+c <- λq.s
+j <- {v,w}
+l <- {fa,ga}
+t <- λv.x
+u <- λw.y
+x <- λz.ba
+y <- λaa.ca
+ba <- z
+ca <- aa
+da <- λfa.ha
+ea <- λga.ia
+(! {r,s} = ! {ha,ia} = λm.l; {((p t) da),((q u) ea)}; ! {e,f} = λd.(b (c d)); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+b <- λp.r
+c <- λq.s
+j <- {v,w}
+l <- {fa,ga}
+m <- {ja,ka}
+t <- λv.x
+u <- λw.y
+x <- λz.ba
+y <- λaa.ca
+ba <- z
+ca <- aa
+da <- λfa.ha
+ea <- λga.ia
+ha <- λja.la
+ia <- λka.ma
+(! {r,s} = ! {la,ma} = l; {((p t) da),((q u) ea)}; ! {e,f} = λd.(b (c d)); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+b <- λp.r
+c <- λq.s
+j <- {v,w}
+m <- {ja,ka}
+t <- λv.x
+u <- λw.y
+x <- λz.ba
+y <- λaa.ca
+ba <- z
+ca <- aa
+da <- λfa.ha
+ea <- λga.ia
+ha <- λja.la
+ia <- λka.ma
+(! {r,s} = ! {la,ma} = {fa,ga}; {((p t) da),((q u) ea)}; ! {e,f} = λd.(b (c d)); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+b <- λp.r
+c <- λq.s
+j <- {v,w}
+m <- {ja,ka}
+t <- λv.x
+u <- λw.y
+x <- λz.ba
+y <- λaa.ca
+ba <- z
+ca <- aa
+da <- λfa.ha
+ea <- λga.ia
+ha <- λja.la
+ia <- λka.ma
+la <- fa
+ma <- ga
+(! {r,s} = {((p t) da),((q u) ea)}; ! {e,f} = λd.(b (c d)); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+b <- λp.r
+c <- λq.s
+j <- {v,w}
+m <- {ja,ka}
+r <- ((p t) da)
+s <- ((q u) ea)
+t <- λv.x
+u <- λw.y
+x <- λz.ba
+y <- λaa.ca
+ba <- z
+ca <- aa
+da <- λfa.ha
+ea <- λga.ia
+ha <- λja.la
+ia <- λka.ma
+la <- fa
+ma <- ga
+(! {e,f} = λd.(b (c d)); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+b <- λp.r
+c <- λq.s
+d <- {na,oa}
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+r <- ((p t) da)
+s <- ((q u) ea)
+t <- λv.x
+u <- λw.y
+x <- λz.ba
+y <- λaa.ca
+ba <- z
+ca <- aa
+da <- λfa.ha
+ea <- λga.ia
+ha <- λja.la
+ia <- λka.ma
+la <- fa
+ma <- ga
+(! {pa,qa} = (b (c d)); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+c <- λq.s
+d <- {na,oa}
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+r <- ((p t) da)
+s <- ((q u) ea)
+t <- λv.x
+u <- λw.y
+x <- λz.ba
+y <- λaa.ca
+ba <- z
+ca <- aa
+da <- λfa.ha
+ea <- λga.ia
+ha <- λja.la
+ia <- λka.ma
+la <- fa
+ma <- ga
+(! {pa,qa} = (λp.r (c d)); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"APP"
+c <- λq.s
+d <- {na,oa}
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+p <- (c d)
+r <- ((p t) da)
+s <- ((q u) ea)
+t <- λv.x
+u <- λw.y
+x <- λz.ba
+y <- λaa.ca
+ba <- z
+ca <- aa
+da <- λfa.ha
+ea <- λga.ia
+ha <- λja.la
+ia <- λka.ma
+la <- fa
+ma <- ga
+(! {pa,qa} = r; λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+d <- {na,oa}
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+s <- ((q u) ea)
+t <- λv.x
+u <- λw.y
+x <- λz.ba
+y <- λaa.ca
+ba <- z
+ca <- aa
+da <- λfa.ha
+ea <- λga.ia
+ha <- λja.la
+ia <- λka.ma
+la <- fa
+ma <- ga
+(! {pa,qa} = (((λq.s d) t) da); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"APP"
+d <- {na,oa}
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+q <- d
+s <- ((q u) ea)
+t <- λv.x
+u <- λw.y
+x <- λz.ba
+y <- λaa.ca
+ba <- z
+ca <- aa
+da <- λfa.ha
+ea <- λga.ia
+ha <- λja.la
+ia <- λka.ma
+la <- fa
+ma <- ga
+(! {pa,qa} = ((s t) da); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+t <- λv.x
+u <- λw.y
+x <- λz.ba
+y <- λaa.ca
+ba <- z
+ca <- aa
+da <- λfa.ha
+ea <- λga.ia
+ha <- λja.la
+ia <- λka.ma
+la <- fa
+ma <- ga
+(! {pa,qa} = (((({na,oa} u) ea) t) da); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"APP"
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+t <- λv.x
+u <- λw.y
+x <- λz.ba
+y <- λaa.ca
+ba <- z
+ca <- aa
+da <- λfa.ha
+ea <- λga.ia
+ha <- λja.la
+ia <- λka.ma
+la <- fa
+ma <- ga
+(! {pa,qa} = (((! {ra,sa} = u; {(na ra),(oa sa)} ea) t) da); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+t <- λv.x
+x <- λz.ba
+y <- λaa.ca
+ba <- z
+ca <- aa
+da <- λfa.ha
+ea <- λga.ia
+ha <- λja.la
+ia <- λka.ma
+la <- fa
+ma <- ga
+(! {pa,qa} = (((! {ra,sa} = λw.y; {(na ra),(oa sa)} ea) t) da); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+t <- λv.x
+w <- {ta,ua}
+x <- λz.ba
+y <- λaa.ca
+ba <- z
+ca <- aa
+da <- λfa.ha
+ea <- λga.ia
+ha <- λja.la
+ia <- λka.ma
+la <- fa
+ma <- ga
+ra <- λta.va
+sa <- λua.wa
+(! {pa,qa} = (((! {va,wa} = y; {(na ra),(oa sa)} ea) t) da); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+t <- λv.x
+w <- {ta,ua}
+x <- λz.ba
+ba <- z
+ca <- aa
+da <- λfa.ha
+ea <- λga.ia
+ha <- λja.la
+ia <- λka.ma
+la <- fa
+ma <- ga
+ra <- λta.va
+sa <- λua.wa
+(! {pa,qa} = (((! {va,wa} = λaa.ca; {(na ra),(oa sa)} ea) t) da); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+t <- λv.x
+w <- {ta,ua}
+x <- λz.ba
+aa <- {xa,ya}
+ba <- z
+ca <- aa
+da <- λfa.ha
+ea <- λga.ia
+ha <- λja.la
+ia <- λka.ma
+la <- fa
+ma <- ga
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+(! {pa,qa} = (((! {za,ab} = ca; {(na ra),(oa sa)} ea) t) da); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+t <- λv.x
+w <- {ta,ua}
+x <- λz.ba
+ba <- z
+da <- λfa.ha
+ea <- λga.ia
+ha <- λja.la
+ia <- λka.ma
+la <- fa
+ma <- ga
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+(! {pa,qa} = (((! {za,ab} = {xa,ya}; {(na ra),(oa sa)} ea) t) da); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+t <- λv.x
+w <- {ta,ua}
+x <- λz.ba
+ba <- z
+da <- λfa.ha
+ea <- λga.ia
+ha <- λja.la
+ia <- λka.ma
+la <- fa
+ma <- ga
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+(! {pa,qa} = ((({(na ra),(oa sa)} ea) t) da); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"APP"
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+t <- λv.x
+w <- {ta,ua}
+x <- λz.ba
+ba <- z
+da <- λfa.ha
+ea <- λga.ia
+ha <- λja.la
+ia <- λka.ma
+la <- fa
+ma <- ga
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+(! {pa,qa} = ((! {bb,cb} = ea; {((na ra) bb),((oa sa) cb)} t) da); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+t <- λv.x
+w <- {ta,ua}
+x <- λz.ba
+ba <- z
+da <- λfa.ha
+ha <- λja.la
+ia <- λka.ma
+la <- fa
+ma <- ga
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+(! {pa,qa} = ((! {bb,cb} = λga.ia; {((na ra) bb),((oa sa) cb)} t) da); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+t <- λv.x
+w <- {ta,ua}
+x <- λz.ba
+ba <- z
+da <- λfa.ha
+ga <- {db,eb}
+ha <- λja.la
+ia <- λka.ma
+la <- fa
+ma <- ga
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+(! {pa,qa} = ((! {fb,gb} = ia; {((na ra) bb),((oa sa) cb)} t) da); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+t <- λv.x
+w <- {ta,ua}
+x <- λz.ba
+ba <- z
+da <- λfa.ha
+ga <- {db,eb}
+ha <- λja.la
+la <- fa
+ma <- ga
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+(! {pa,qa} = ((! {fb,gb} = λka.ma; {((na ra) bb),((oa sa) cb)} t) da); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+t <- λv.x
+w <- {ta,ua}
+x <- λz.ba
+ba <- z
+da <- λfa.ha
+ga <- {db,eb}
+ha <- λja.la
+ka <- {hb,ib}
+la <- fa
+ma <- ga
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+(! {pa,qa} = ((! {jb,kb} = ma; {((na ra) bb),((oa sa) cb)} t) da); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+t <- λv.x
+w <- {ta,ua}
+x <- λz.ba
+ba <- z
+da <- λfa.ha
+ha <- λja.la
+ka <- {hb,ib}
+la <- fa
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+(! {pa,qa} = ((! {jb,kb} = {db,eb}; {((na ra) bb),((oa sa) cb)} t) da); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+t <- λv.x
+w <- {ta,ua}
+x <- λz.ba
+ba <- z
+da <- λfa.ha
+ha <- λja.la
+ka <- {hb,ib}
+la <- fa
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+(! {pa,qa} = (({((na ra) bb),((oa sa) cb)} t) da); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"APP"
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+t <- λv.x
+w <- {ta,ua}
+x <- λz.ba
+ba <- z
+da <- λfa.ha
+ha <- λja.la
+ka <- {hb,ib}
+la <- fa
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+(! {pa,qa} = (! {lb,mb} = t; {(((na ra) bb) lb),(((oa sa) cb) mb)} da); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+w <- {ta,ua}
+x <- λz.ba
+ba <- z
+da <- λfa.ha
+ha <- λja.la
+ka <- {hb,ib}
+la <- fa
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+(! {pa,qa} = (! {lb,mb} = λv.x; {(((na ra) bb) lb),(((oa sa) cb) mb)} da); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+v <- {nb,ob}
+w <- {ta,ua}
+x <- λz.ba
+ba <- z
+da <- λfa.ha
+ha <- λja.la
+ka <- {hb,ib}
+la <- fa
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+(! {pa,qa} = (! {pb,qb} = x; {(((na ra) bb) lb),(((oa sa) cb) mb)} da); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+v <- {nb,ob}
+w <- {ta,ua}
+ba <- z
+da <- λfa.ha
+ha <- λja.la
+ka <- {hb,ib}
+la <- fa
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+(! {pa,qa} = (! {pb,qb} = λz.ba; {(((na ra) bb) lb),(((oa sa) cb) mb)} da); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+v <- {nb,ob}
+w <- {ta,ua}
+z <- {rb,sb}
+ba <- z
+da <- λfa.ha
+ha <- λja.la
+ka <- {hb,ib}
+la <- fa
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+(! {pa,qa} = (! {tb,ub} = ba; {(((na ra) bb) lb),(((oa sa) cb) mb)} da); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+v <- {nb,ob}
+w <- {ta,ua}
+da <- λfa.ha
+ha <- λja.la
+ka <- {hb,ib}
+la <- fa
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+(! {pa,qa} = (! {tb,ub} = {rb,sb}; {(((na ra) bb) lb),(((oa sa) cb) mb)} da); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+v <- {nb,ob}
+w <- {ta,ua}
+da <- λfa.ha
+ha <- λja.la
+ka <- {hb,ib}
+la <- fa
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+(! {pa,qa} = ({(((na ra) bb) lb),(((oa sa) cb) mb)} da); λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"APP"
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+v <- {nb,ob}
+w <- {ta,ua}
+da <- λfa.ha
+ha <- λja.la
+ka <- {hb,ib}
+la <- fa
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+(! {pa,qa} = ! {vb,wb} = da; {((((na ra) bb) lb) vb),((((oa sa) cb) mb) wb)}; λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+v <- {nb,ob}
+w <- {ta,ua}
+ha <- λja.la
+ka <- {hb,ib}
+la <- fa
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+(! {pa,qa} = ! {vb,wb} = λfa.ha; {((((na ra) bb) lb) vb),((((oa sa) cb) mb) wb)}; λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+v <- {nb,ob}
+w <- {ta,ua}
+fa <- {xb,yb}
+ha <- λja.la
+ka <- {hb,ib}
+la <- fa
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+vb <- λxb.zb
+wb <- λyb.ac
+(! {pa,qa} = ! {zb,ac} = ha; {((((na ra) bb) lb) vb),((((oa sa) cb) mb) wb)}; λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+v <- {nb,ob}
+w <- {ta,ua}
+fa <- {xb,yb}
+ka <- {hb,ib}
+la <- fa
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+vb <- λxb.zb
+wb <- λyb.ac
+(! {pa,qa} = ! {zb,ac} = λja.la; {((((na ra) bb) lb) vb),((((oa sa) cb) mb) wb)}; λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+v <- {nb,ob}
+w <- {ta,ua}
+fa <- {xb,yb}
+ja <- {bc,cc}
+ka <- {hb,ib}
+la <- fa
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+vb <- λxb.zb
+wb <- λyb.ac
+zb <- λbc.dc
+ac <- λcc.ec
+(! {pa,qa} = ! {dc,ec} = la; {((((na ra) bb) lb) vb),((((oa sa) cb) mb) wb)}; λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+v <- {nb,ob}
+w <- {ta,ua}
+ja <- {bc,cc}
+ka <- {hb,ib}
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+vb <- λxb.zb
+wb <- λyb.ac
+zb <- λbc.dc
+ac <- λcc.ec
+(! {pa,qa} = ! {dc,ec} = {xb,yb}; {((((na ra) bb) lb) vb),((((oa sa) cb) mb) wb)}; λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+"DUP"
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+v <- {nb,ob}
+w <- {ta,ua}
+ja <- {bc,cc}
+ka <- {hb,ib}
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+vb <- λxb.zb
+wb <- λyb.ac
+zb <- λbc.dc
+ac <- λcc.ec
+dc <- xb
+ec <- yb
+(! {pa,qa} = {((((na ra) bb) lb) vb),((((oa sa) cb) mb) wb)}; λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"DUP"
+e <- λna.pa
+f <- λoa.qa
+j <- {v,w}
+m <- {ja,ka}
+v <- {nb,ob}
+w <- {ta,ua}
+ja <- {bc,cc}
+ka <- {hb,ib}
+pa <- ((((na ra) bb) lb) vb)
+qa <- ((((oa sa) cb) mb) wb)
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+vb <- λxb.zb
+wb <- λyb.ac
+zb <- λbc.dc
+ac <- λcc.ec
+dc <- xb
+ec <- yb
+(λg.(e (f g)) λn.λo.n)
+----------------------------------------
+"APP"
+e <- λna.pa
+f <- λoa.qa
+g <- λn.λo.n
+j <- {v,w}
+m <- {ja,ka}
+v <- {nb,ob}
+w <- {ta,ua}
+ja <- {bc,cc}
+ka <- {hb,ib}
+pa <- ((((na ra) bb) lb) vb)
+qa <- ((((oa sa) cb) mb) wb)
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+vb <- λxb.zb
+wb <- λyb.ac
+zb <- λbc.dc
+ac <- λcc.ec
+dc <- xb
+ec <- yb
+(e (f g))
+----------------------------------------
+f <- λoa.qa
+g <- λn.λo.n
+j <- {v,w}
+m <- {ja,ka}
+v <- {nb,ob}
+w <- {ta,ua}
+ja <- {bc,cc}
+ka <- {hb,ib}
+pa <- ((((na ra) bb) lb) vb)
+qa <- ((((oa sa) cb) mb) wb)
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+vb <- λxb.zb
+wb <- λyb.ac
+zb <- λbc.dc
+ac <- λcc.ec
+dc <- xb
+ec <- yb
+(λna.pa (f g))
+----------------------------------------
+"APP"
+f <- λoa.qa
+g <- λn.λo.n
+j <- {v,w}
+m <- {ja,ka}
+v <- {nb,ob}
+w <- {ta,ua}
+ja <- {bc,cc}
+ka <- {hb,ib}
+na <- (f g)
+pa <- ((((na ra) bb) lb) vb)
+qa <- ((((oa sa) cb) mb) wb)
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+vb <- λxb.zb
+wb <- λyb.ac
+zb <- λbc.dc
+ac <- λcc.ec
+dc <- xb
+ec <- yb
+pa
+----------------------------------------
+g <- λn.λo.n
+j <- {v,w}
+m <- {ja,ka}
+v <- {nb,ob}
+w <- {ta,ua}
+ja <- {bc,cc}
+ka <- {hb,ib}
+qa <- ((((oa sa) cb) mb) wb)
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+vb <- λxb.zb
+wb <- λyb.ac
+zb <- λbc.dc
+ac <- λcc.ec
+dc <- xb
+ec <- yb
+(((((λoa.qa g) ra) bb) lb) vb)
+----------------------------------------
+"APP"
+g <- λn.λo.n
+j <- {v,w}
+m <- {ja,ka}
+v <- {nb,ob}
+w <- {ta,ua}
+ja <- {bc,cc}
+ka <- {hb,ib}
+oa <- g
+qa <- ((((oa sa) cb) mb) wb)
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+vb <- λxb.zb
+wb <- λyb.ac
+zb <- λbc.dc
+ac <- λcc.ec
+dc <- xb
+ec <- yb
+((((qa ra) bb) lb) vb)
+----------------------------------------
+j <- {v,w}
+m <- {ja,ka}
+v <- {nb,ob}
+w <- {ta,ua}
+ja <- {bc,cc}
+ka <- {hb,ib}
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+vb <- λxb.zb
+wb <- λyb.ac
+zb <- λbc.dc
+ac <- λcc.ec
+dc <- xb
+ec <- yb
+((((((((λn.λo.n sa) cb) mb) wb) ra) bb) lb) vb)
+----------------------------------------
+"APP"
+j <- {v,w}
+m <- {ja,ka}
+n <- sa
+v <- {nb,ob}
+w <- {ta,ua}
+ja <- {bc,cc}
+ka <- {hb,ib}
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+vb <- λxb.zb
+wb <- λyb.ac
+zb <- λbc.dc
+ac <- λcc.ec
+dc <- xb
+ec <- yb
+(((((((λo.n cb) mb) wb) ra) bb) lb) vb)
+----------------------------------------
+"APP"
+j <- {v,w}
+m <- {ja,ka}
+n <- sa
+o <- cb
+v <- {nb,ob}
+w <- {ta,ua}
+ja <- {bc,cc}
+ka <- {hb,ib}
+ra <- λta.va
+sa <- λua.wa
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+vb <- λxb.zb
+wb <- λyb.ac
+zb <- λbc.dc
+ac <- λcc.ec
+dc <- xb
+ec <- yb
+((((((n mb) wb) ra) bb) lb) vb)
+----------------------------------------
+j <- {v,w}
+m <- {ja,ka}
+o <- cb
+v <- {nb,ob}
+w <- {ta,ua}
+ja <- {bc,cc}
+ka <- {hb,ib}
+ra <- λta.va
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+vb <- λxb.zb
+wb <- λyb.ac
+zb <- λbc.dc
+ac <- λcc.ec
+dc <- xb
+ec <- yb
+((((((λua.wa mb) wb) ra) bb) lb) vb)
+----------------------------------------
+"APP"
+j <- {v,w}
+m <- {ja,ka}
+o <- cb
+v <- {nb,ob}
+w <- {ta,ua}
+ja <- {bc,cc}
+ka <- {hb,ib}
+ra <- λta.va
+ua <- mb
+va <- λxa.za
+wa <- λya.ab
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+vb <- λxb.zb
+wb <- λyb.ac
+zb <- λbc.dc
+ac <- λcc.ec
+dc <- xb
+ec <- yb
+(((((wa wb) ra) bb) lb) vb)
+----------------------------------------
+j <- {v,w}
+m <- {ja,ka}
+o <- cb
+v <- {nb,ob}
+w <- {ta,ua}
+ja <- {bc,cc}
+ka <- {hb,ib}
+ra <- λta.va
+ua <- mb
+va <- λxa.za
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+vb <- λxb.zb
+wb <- λyb.ac
+zb <- λbc.dc
+ac <- λcc.ec
+dc <- xb
+ec <- yb
+(((((λya.ab wb) ra) bb) lb) vb)
+----------------------------------------
+"APP"
+j <- {v,w}
+m <- {ja,ka}
+o <- cb
+v <- {nb,ob}
+w <- {ta,ua}
+ja <- {bc,cc}
+ka <- {hb,ib}
+ra <- λta.va
+ua <- mb
+va <- λxa.za
+ya <- wb
+za <- xa
+ab <- ya
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+vb <- λxb.zb
+wb <- λyb.ac
+zb <- λbc.dc
+ac <- λcc.ec
+dc <- xb
+ec <- yb
+((((ab ra) bb) lb) vb)
+----------------------------------------
+j <- {v,w}
+m <- {ja,ka}
+o <- cb
+v <- {nb,ob}
+w <- {ta,ua}
+ja <- {bc,cc}
+ka <- {hb,ib}
+ra <- λta.va
+ua <- mb
+va <- λxa.za
+za <- xa
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+vb <- λxb.zb
+zb <- λbc.dc
+ac <- λcc.ec
+dc <- xb
+ec <- yb
+((((λyb.ac ra) bb) lb) vb)
+----------------------------------------
+"APP"
+j <- {v,w}
+m <- {ja,ka}
+o <- cb
+v <- {nb,ob}
+w <- {ta,ua}
+ja <- {bc,cc}
+ka <- {hb,ib}
+ra <- λta.va
+ua <- mb
+va <- λxa.za
+za <- xa
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+vb <- λxb.zb
+yb <- ra
+zb <- λbc.dc
+ac <- λcc.ec
+dc <- xb
+ec <- yb
+(((ac bb) lb) vb)
+----------------------------------------
+j <- {v,w}
+m <- {ja,ka}
+o <- cb
+v <- {nb,ob}
+w <- {ta,ua}
+ja <- {bc,cc}
+ka <- {hb,ib}
+ra <- λta.va
+ua <- mb
+va <- λxa.za
+za <- xa
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+vb <- λxb.zb
+yb <- ra
+zb <- λbc.dc
+dc <- xb
+ec <- yb
+(((λcc.ec bb) lb) vb)
+----------------------------------------
+"APP"
+j <- {v,w}
+m <- {ja,ka}
+o <- cb
+v <- {nb,ob}
+w <- {ta,ua}
+ja <- {bc,cc}
+ka <- {hb,ib}
+ra <- λta.va
+ua <- mb
+va <- λxa.za
+za <- xa
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+vb <- λxb.zb
+yb <- ra
+zb <- λbc.dc
+cc <- bb
+dc <- xb
+ec <- yb
+((ec lb) vb)
+----------------------------------------
+j <- {v,w}
+m <- {ja,ka}
+o <- cb
+v <- {nb,ob}
+w <- {ta,ua}
+ja <- {bc,cc}
+ka <- {hb,ib}
+ua <- mb
+va <- λxa.za
+za <- xa
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+vb <- λxb.zb
+zb <- λbc.dc
+cc <- bb
+dc <- xb
+((λta.va lb) vb)
+----------------------------------------
+"APP"
+j <- {v,w}
+m <- {ja,ka}
+o <- cb
+v <- {nb,ob}
+w <- {ta,ua}
+ja <- {bc,cc}
+ka <- {hb,ib}
+ta <- lb
+ua <- mb
+va <- λxa.za
+za <- xa
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+vb <- λxb.zb
+zb <- λbc.dc
+cc <- bb
+dc <- xb
+(va vb)
+----------------------------------------
+j <- {v,w}
+m <- {ja,ka}
+o <- cb
+v <- {nb,ob}
+w <- {ta,ua}
+ja <- {bc,cc}
+ka <- {hb,ib}
+ta <- lb
+ua <- mb
+za <- xa
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+vb <- λxb.zb
+zb <- λbc.dc
+cc <- bb
+dc <- xb
+(λxa.za vb)
+----------------------------------------
+"APP"
+j <- {v,w}
+m <- {ja,ka}
+o <- cb
+v <- {nb,ob}
+w <- {ta,ua}
+ja <- {bc,cc}
+ka <- {hb,ib}
+ta <- lb
+ua <- mb
+xa <- vb
+za <- xa
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+vb <- λxb.zb
+zb <- λbc.dc
+cc <- bb
+dc <- xb
+za
+----------------------------------------
+j <- {v,w}
+m <- {ja,ka}
+o <- cb
+v <- {nb,ob}
+w <- {ta,ua}
+ja <- {bc,cc}
+ka <- {hb,ib}
+ta <- lb
+ua <- mb
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+zb <- λbc.dc
+cc <- bb
+dc <- xb
+λxb.zb
+----------------------------------------
+j <- {v,w}
+m <- {ja,ka}
+o <- cb
+v <- {nb,ob}
+w <- {ta,ua}
+ja <- {bc,cc}
+ka <- {hb,ib}
+ta <- lb
+ua <- mb
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+cc <- bb
+dc <- xb
+λxb.λbc.dc
+----------------------------------------
+j <- {v,w}
+m <- {ja,ka}
+o <- cb
+v <- {nb,ob}
+w <- {ta,ua}
+ja <- {bc,cc}
+ka <- {hb,ib}
+ta <- lb
+ua <- mb
+bb <- λdb.fb
+cb <- λeb.gb
+fb <- λhb.jb
+gb <- λib.kb
+jb <- db
+kb <- eb
+lb <- λnb.pb
+mb <- λob.qb
+pb <- λrb.tb
+qb <- λsb.ub
+tb <- rb
+ub <- sb
+cc <- bb
+λxb.λbc.xb
+----------------------------------------
+- WORK: 42
+- WORK: 42

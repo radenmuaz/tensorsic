@@ -1,0 +1,2060 @@
+You need to complete the static interaction combinator engine
+
+haskell reference
+
+{- README.md -}
+
+{-# LANGUAGE MultilineStrings #-}
+
+-- This is like main.hs, but includes a step-by-step debugger.
+
+import Control.Monad (when)
+import Control.Monad.IO.Class (liftIO)
+import Data.Char (chr, ord)
+import Data.IORef
+import Data.Word
+import Debug.Trace
+import System.IO.Unsafe (unsafePerformIO)
+import Text.Parsec hiding (State)
+import qualified Data.IntMap.Strict as IntMap
+import qualified Data.Map as Map
+import qualified Text.Parsec as Parsec
+import Data.Maybe (isJust)
+
+type Name = Word64
+
+data Term
+  = Var Name                     -- Name
+  | Let Name Term Term           -- "! " Name " = " Term "; " Term
+  | Era                          -- "*"
+  | Sup Name Term Term           -- "&" Name "{" Term "," Term "}"
+  | Dup Name Name Name Term Term -- "! &" Name "{" Name "," Name "}" "=" Term ";" Term
+  | Lam Name Name Term           -- "&" Label "λ" Name "." Term
+  | App Name Term Term           -- "&" Label "(" Term " " Term ")"
+
+-- Globals
+-- -------
+
+{-# NOINLINE gSUBST #-}
+gSUBST :: IORef (IntMap.IntMap Term)
+gSUBST = unsafePerformIO $ newIORef IntMap.empty
+
+{-# NOINLINE gFRESH #-}
+gFRESH :: IORef Name
+gFRESH = unsafePerformIO $ newIORef 0
+
+{-# NOINLINE gINTERS #-}
+gINTERS :: IORef Word64
+gINTERS = unsafePerformIO $ newIORef 0
+
+{-# NOINLINE gSTOP #-}
+gSTOP :: IORef Bool
+gSTOP = unsafePerformIO $ newIORef False
+
+-- Helper functions for global substitution
+set :: Name -> Term -> IO ()
+set name term = do
+  subMap <- readIORef gSUBST
+  writeIORef gSUBST (IntMap.insert (fromIntegral name) term subMap)
+
+get :: Name -> IO (Maybe Term)
+get name = do
+  subMap <- readIORef gSUBST
+  let result = IntMap.lookup (fromIntegral name) subMap
+  when (isJust result) $ do
+    let newMap = IntMap.delete (fromIntegral name) subMap
+    writeIORef gSUBST newMap
+  return result
+
+fresh :: IO Name
+fresh = do
+  n <- readIORef gFRESH
+  writeIORef gFRESH (n + 1)
+  return n
+
+incInters :: IO ()
+incInters = do
+  n <- readIORef gINTERS
+  writeIORef gINTERS (n + 1)
+
+markReduction :: IO ()
+markReduction = writeIORef gSTOP True
+
+hasReduced :: IO Bool
+hasReduced = readIORef gSTOP
+
+resetReduction :: IO ()
+resetReduction = writeIORef gSTOP False
+
+-- Function to display the substitution map
+showSubst :: IO String
+showSubst = do
+  subMap <- readIORef gSUBST
+  if IntMap.null subMap
+    then return ""
+    else do
+      let entries = IntMap.toList subMap
+      let showEntry (k, v) = name (fromIntegral k) ++ " <- " ++ show v
+      return $ unlines (map showEntry entries)
+
+-- Evaluator
+-- ---------
+
+app_era :: Term -> Term -> IO Term
+app_era Era _ = do
+  incInters
+  markReduction
+  return Era
+app_era _ _ = error "app_era: expected Era as first argument"
+
+app_lam :: Term -> Term -> Name -> IO Term
+app_lam (Lam lam_lab nam bod) arg app_lab = do
+  incInters
+  markReduction
+  if lam_lab == app_lab then do
+    set nam arg
+    return bod
+  else do
+    y <- fresh
+    z <- fresh
+    f <- fresh
+    x <- fresh
+    v <- fresh
+    set nam (Lam app_lab y (Var z))
+    return $ 
+      (Let f bod
+      (Let x (App lam_lab arg (Var y))
+      (Let v (App app_lab (Var f) (Var x))
+      (Lam lam_lab z (Var v)))))
+app_lam _ _ _ = error "app_lam: expected Lam as first argument"
+
+app_sup :: Term -> Term -> Name -> IO Term
+app_sup (Sup lab lft rgt) arg app_lab = do
+  incInters
+  markReduction
+  c0 <- fresh
+  c1 <- fresh
+  let a0 = App app_lab lft (Var c0)
+  let a1 = App app_lab rgt (Var c1)
+  return (Dup lab c0 c1 arg (Sup lab a0 a1))
+app_sup _ _ _ = error "app_sup: expected Sup as first argument"
+
+app_dup :: Term -> IO Term
+app_dup (App app_lab f (Dup dup_lab x y val bod)) = do
+  incInters
+  markReduction
+  return (Dup dup_lab x y val (App app_lab f bod))
+app_dup term = error "app_dup: expected App with Dup"
+
+dup_era :: Term -> Term -> IO Term
+dup_era (Dup lab r s _ k) Era = do
+  incInters
+  markReduction
+  set r Era
+  set s Era
+  return k
+dup_era _ _ = error "dup_era: expected Dup and Era"
+
+dup_lam :: Term -> Term -> IO Term
+dup_lam (Dup lab r s _ k) (Lam lam_lab x f) = do
+  incInters
+  markReduction
+  x0 <- fresh
+  x1 <- fresh
+  f0 <- fresh
+  f1 <- fresh
+  set r (Lam lam_lab x0 (Var f0))
+  set s (Lam lam_lab x1 (Var f1))
+  set x (Sup lab (Var x0) (Var x1))
+  return (Dup lab f0 f1 f k)
+dup_lam _ _ = error "dup_lam: expected Dup and Lam"
+
+dup_sup :: Term -> Term -> IO Term
+dup_sup (Dup dupLab x y _ k) (Sup supLab a b) = do
+  incInters
+  markReduction
+  if dupLab == supLab then do
+    set x a
+    set y b
+    return k
+  else do
+    a0 <- fresh
+    a1 <- fresh
+    b0 <- fresh
+    b1 <- fresh
+    set x (Sup supLab (Var a0) (Var b0))
+    set y (Sup supLab (Var a1) (Var b1))
+    return (Dup dupLab a0 a1 a (Dup dupLab b0 b1 b k))
+dup_sup _ _ = error "dup_sup: expected Dup and Sup"
+
+dup_dup :: Term -> Term -> IO Term
+dup_dup (Dup labL x0 x1 _ t) (Dup labR y0 y1 y x) = do
+  incInters
+  markReduction
+  return (Dup labL x0 x1 x (Dup labL y0 y1 y t))
+dup_dup _ _ = error "dup_dup: expected Dup with inner Dup"
+
+whnf :: Term -> IO Term
+whnf term = case term of
+  Var n -> do
+    sub <- get n
+    case sub of
+      Just s -> do
+        markReduction
+        whnf s
+      Nothing -> return (Var n)
+  Let x v b -> do
+    print "LET"
+    v' <- whnf v
+    didReduce <- hasReduced
+    if didReduce then
+      return (Let x v' b)
+    else do
+      set x v'
+      markReduction
+      whnf b
+  App app_lab f a -> do
+    f' <- whnf f
+    didReduce <- hasReduced
+    if didReduce then
+      return (App app_lab f' a)
+    else do
+      print "APP"
+      case f' of
+        Lam {} -> app_lam f' a app_lab
+        Sup {} -> app_sup f' a app_lab
+        Era    -> app_era f' a
+        Dup {} -> app_dup (App app_lab f' a)
+        _      -> return (App app_lab f' a)
+  Dup dup_lab r s v k -> do
+    print "DUP"
+    v' <- whnf v
+    didReduce <- hasReduced
+    if didReduce then
+      return (Dup dup_lab r s v' k)
+    else
+      case v' of
+        Lam {} -> dup_lam (Dup dup_lab r s v' k) v'
+        Sup {} -> dup_sup (Dup dup_lab r s v' k) v'
+        Era    -> dup_era (Dup dup_lab r s v' k) v'
+        Dup {} -> dup_dup (Dup dup_lab r s v' k) v'
+        _      -> return (Dup dup_lab r s v' k)
+  _ -> return term
+
+-- FIXME: this is ugly, improve
+step :: Term -> IO Term
+step term = do
+  resetReduction
+  term' <- whnf term
+  didReduce <- hasReduced
+  if didReduce then
+    return term'
+  else do
+    resetReduction
+    case term' of
+      Lam lam_lab x b -> do
+        b' <- step b
+        didReduce <- hasReduced
+        if didReduce then do
+          markReduction
+          return (Lam lam_lab x b')
+        else
+          return term'
+      App app_lab f a -> do
+        f' <- step f
+        didReduce <- hasReduced
+        if didReduce then do
+          markReduction
+          return (App app_lab f' a)
+        else do
+          resetReduction
+          a' <- step a
+          didReduce <- hasReduced
+          if didReduce then do
+            markReduction
+            return (App app_lab f a')
+          else
+            return term'
+      Sup sup_lab a b -> do
+        a' <- step a
+        didReduce <- hasReduced
+        if didReduce then do
+          markReduction
+          return (Sup sup_lab a' b)
+        else do
+          resetReduction
+          b' <- step b
+          didReduce <- hasReduced
+          if didReduce then do
+            markReduction
+            return (Sup sup_lab a b')
+          else
+            return term'
+      Dup dup_lab r s v k -> do
+        v' <- step v
+        didReduce <- hasReduced
+        if didReduce then do
+          markReduction
+          return (Dup dup_lab r s v' k)
+        else do
+          resetReduction
+          k' <- step k
+          didReduce <- hasReduced
+          if didReduce then do
+            markReduction
+            return (Dup dup_lab r s v k')
+          else
+            return term'
+      _ -> return term'
+
+normal :: Term -> IO Term
+normal term = do
+  substStr <- showSubst
+  putStrLn $ substStr ++ show term
+  putStrLn $ replicate 40 '-'
+  term' <- step term
+  did_reduce <- hasReduced
+  if did_reduce then
+    normal term'
+  else
+    return term'
+
+-- Stringifier
+-- -----------
+
+name :: Name -> String
+name k = all !! fromIntegral (k+1) where
+  all :: [String]
+  all = [""] ++ concatMap (\str -> map (: str) ['a'..'z']) all
+
+instance Show Term where
+  show (Var n)           = name n
+  show (Let x t1 t2)     = "! " ++ name x ++ " = " ++ show t1 ++ "; " ++ show t2
+  show Era               = "*"
+  show (Sup l t1 t2)     
+    | l == 0             = "{" ++ show t1 ++ "," ++ show t2 ++ "}"
+    | l == 1             = "<" ++ show t1 ++ "," ++ show t2 ++ ">"
+    | otherwise          = "&" ++ show (fromIntegral l :: Int) ++ "{" ++ show t1 ++ "," ++ show t2 ++ "}"
+  show (Dup l x y t1 t2) 
+    | l == 0             = "! {" ++ name x ++ "," ++ name y ++ "} = " ++ show t1 ++ "; " ++ show t2
+    | l == 1             = "! <" ++ name x ++ "," ++ name y ++ "> = " ++ show t1 ++ "; " ++ show t2
+    | otherwise          = "! &" ++ show (fromIntegral l :: Int) ++ "{" ++ name x ++ "," ++ name y ++ "} = " ++ show t1 ++ "; " ++ show t2
+  show (Lam lab x t)     
+    | lab == 0           = "λ" ++ name x ++ "." ++ show t
+    | lab == 1           = "Λ" ++ name x ++ "." ++ show t
+    | otherwise          = "&" ++ show (fromIntegral lab :: Int) ++ " λ" ++ name x ++ "." ++ show t
+  show (App lab t1 t2)   
+    | lab == 0           = "(" ++ show t1 ++ " " ++ show t2 ++ ")"
+    | lab == 1           = "[" ++ show t1 ++ " " ++ show t2 ++ "]"
+    | otherwise          = "&" ++ show (fromIntegral lab :: Int) ++ " (" ++ show t1 ++ " " ++ show t2 ++ ")"
+
+-- Parser
+-- ------
+
+type ParserST = Map.Map String Name
+type LocalCtx = Map.Map String Name
+type Parser a = ParsecT String ParserST IO a
+
+whiteSpace :: Parser ()
+whiteSpace = skipMany (space <|> comment) where
+  comment = do 
+    try (string "//")
+    skipMany (noneOf "\n\r")
+    (newline <|> (eof >> return '\n'))
+
+lexeme :: Parser a -> Parser a
+lexeme p = p <* whiteSpace
+
+symbol :: String -> Parser String
+symbol s = lexeme (string s)
+
+parseNatural :: Parser Integer
+parseNatural = lexeme $ read <$> many1 digit
+
+isGlobal :: String -> Bool
+isGlobal name = take 1 name == "$"
+
+getGlobalName :: String -> Parser Name
+getGlobalName gname = do
+  globalMap <- getState
+  case Map.lookup gname globalMap of
+    Just n  -> return n
+    Nothing -> do
+      n <- liftIO fresh
+      putState (Map.insert gname n globalMap)
+      return n
+
+bindVar :: String -> LocalCtx -> Parser (Name, LocalCtx)
+bindVar name ctx
+  | isGlobal name = do
+      n <- getGlobalName name
+      return (n, ctx)
+  | otherwise = do
+      n <- liftIO fresh
+      let ctx' = Map.insert name n ctx
+      return (n, ctx')
+
+getVar :: String -> LocalCtx -> Parser Name
+getVar name ctx
+  | isGlobal name = getGlobalName name
+  | otherwise = case Map.lookup name ctx of
+      Just n  -> return n
+      Nothing -> fail $ "Unbound local variable: " ++ name
+
+parseVarName :: Parser String
+parseVarName = lexeme $ try (do
+  char '$'
+  name <- many1 (alphaNum <|> char '_')
+  return ("$" ++ name)
+ ) <|> many1 (alphaNum <|> char '_')
+
+-- Term parsers
+parseTerm :: LocalCtx -> Parser Term
+parseTerm ctx
+  =   try (parseApp ctx)
+  <|> try (parseLet ctx)
+  <|> try (parseLam ctx)
+  <|> try (parseSup ctx)
+  <|> try (parseDup ctx)
+  <|> parseSimpleTerm ctx
+
+parseSimpleTerm :: LocalCtx -> Parser Term
+parseSimpleTerm ctx
+  = parseVar ctx
+  <|> parseEra
+  <|> between (symbol "(") (symbol ")") (parseTerm ctx)
+
+parseVar :: LocalCtx -> Parser Term
+parseVar ctx = do
+  name <- parseVarName
+  n    <- getVar name ctx
+  return $ Var n
+
+parseLam :: LocalCtx -> Parser Term
+parseLam ctx = try (parseLamWithLabel ctx) <|> parseSimpleLam ctx <|> parseCapitalLam ctx
+
+parseSimpleLam :: LocalCtx -> Parser Term
+parseSimpleLam ctx = do
+  symbol "λ"
+  name      <- parseVarName
+  (n, ctx') <- bindVar name ctx
+  symbol "."
+  body      <- parseTerm ctx'
+  return $ Lam 0 n body
+
+parseCapitalLam :: LocalCtx -> Parser Term
+parseCapitalLam ctx = do
+  symbol "Λ"
+  name      <- parseVarName
+  (n, ctx') <- bindVar name ctx
+  symbol "."
+  body      <- parseTerm ctx'
+  return $ Lam 1 n body
+
+parseLamWithLabel :: LocalCtx -> Parser Term
+parseLamWithLabel ctx = do
+  symbol "&"
+  lab <- fromIntegral <$> parseNatural
+  symbol "λ"
+  name      <- parseVarName
+  (n, ctx') <- bindVar name ctx
+  symbol "."
+  body      <- parseTerm ctx'
+  return $ Lam lab n body
+
+parseApp :: LocalCtx -> Parser Term
+parseApp ctx = try (parseAppWithLabel ctx) <|> parseSimpleApp ctx <|> parseSquareApp ctx
+
+parseSimpleApp :: LocalCtx -> Parser Term
+parseSimpleApp ctx = between (symbol "(") (symbol ")") $ do
+  f <- parseTerm ctx
+  whiteSpace
+  a <- parseTerm ctx
+  return $ App 0 f a
+
+parseSquareApp :: LocalCtx -> Parser Term
+parseSquareApp ctx = between (symbol "[") (symbol "]") $ do
+  f <- parseTerm ctx
+  whiteSpace
+  a <- parseTerm ctx
+  return $ App 1 f a
+
+parseAppWithLabel :: LocalCtx -> Parser Term
+parseAppWithLabel ctx = do
+  symbol "&"
+  lab <- fromIntegral <$> parseNatural
+  between (symbol "(") (symbol ")") $ do
+    f <- parseTerm ctx
+    whiteSpace
+    a <- parseTerm ctx
+    return $ App lab f a
+
+parseSup :: LocalCtx -> Parser Term
+parseSup ctx = try (parseSupWithLabel ctx) <|> parseSimpleSup ctx <|> parseAngleSup ctx
+
+parseSimpleSup :: LocalCtx -> Parser Term
+parseSimpleSup ctx = between (symbol "{") (symbol "}") $ do
+  a <- parseTerm ctx
+  symbol ","
+  b <- parseTerm ctx
+  return $ Sup 0 a b
+
+parseAngleSup :: LocalCtx -> Parser Term
+parseAngleSup ctx = between (symbol "<") (symbol ">") $ do
+  a <- parseTerm ctx
+  symbol ","
+  b <- parseTerm ctx
+  return $ Sup 1 a b
+
+parseSupWithLabel :: LocalCtx -> Parser Term
+parseSupWithLabel ctx = do
+  symbol "&"
+  l <- fromIntegral <$> parseNatural
+  between (symbol "{") (symbol "}") $ do
+    a <- parseTerm ctx
+    symbol ","
+    b <- parseTerm ctx
+    return $ Sup l a b
+
+parseDup :: LocalCtx -> Parser Term
+parseDup ctx = try (parseDupWithLabel ctx) <|> parseSimpleDup ctx <|> parseAngleDup ctx
+
+parseSimpleDup :: LocalCtx -> Parser Term
+parseSimpleDup ctx = do
+  symbol "!"
+  (name1, name2) <- between (symbol "{") (symbol "}") $ do
+    a <- parseVarName
+    symbol ","
+    b <- parseVarName
+    return (a, b)
+  symbol "="
+  val <- parseTerm ctx
+  symbol ";"
+  (n1, ctx') <- bindVar name1 ctx
+  (n2, ctx'') <- bindVar name2 ctx'
+  body <- parseTerm ctx''
+  return $ Dup 0 n1 n2 val body
+
+parseAngleDup :: LocalCtx -> Parser Term
+parseAngleDup ctx = do
+  symbol "!"
+  (name1, name2) <- between (symbol "<") (symbol ">") $ do
+    a <- parseVarName
+    symbol ","
+    b <- parseVarName
+    return (a, b)
+  symbol "="
+  val <- parseTerm ctx
+  symbol ";"
+  (n1, ctx') <- bindVar name1 ctx
+  (n2, ctx'') <- bindVar name2 ctx'
+  body <- parseTerm ctx''
+  return $ Dup 1 n1 n2 val body
+
+parseDupWithLabel :: LocalCtx -> Parser Term
+parseDupWithLabel ctx = do
+  symbol "!"
+  symbol "&"
+  l <- fromIntegral <$> parseNatural
+  (name1, name2) <- between (symbol "{") (symbol "}") $ do
+    a <- parseVarName
+    symbol ","
+    b <- parseVarName
+    return (a, b)
+  symbol "="
+  val <- parseTerm ctx
+  symbol ";"
+  (n1, ctx') <- bindVar name1 ctx
+  (n2, ctx'') <- bindVar name2 ctx'
+  body <- parseTerm ctx''
+  return $ Dup l n1 n2 val body
+
+parseLet :: LocalCtx -> Parser Term
+parseLet ctx = do
+  symbol "!"
+  name      <- parseVarName
+  symbol "="
+  t1        <- parseTerm ctx
+  symbol ";"
+  (n, ctx') <- bindVar name ctx
+  t2        <- parseTerm ctx'
+  return $ Let n t1 t2
+
+parseEra :: Parser Term
+parseEra = do
+  symbol "*"
+  return Era
+
+parseIC :: String -> IO (Either ParseError (Term, Map.Map String Name))
+parseIC input = runParserT parser Map.empty "" input where
+  parser = do
+    whiteSpace
+    term <- parseTerm Map.empty
+    state <- getState
+    return (term, state)
+
+doParseIC :: String -> IO Term
+doParseIC input = do
+  result <- parseIC input
+  case result of
+    Left err        -> error $ show err
+    Right (term, _) -> return term
+
+-- Tests
+-- -----
+
+test_term :: String -> IO ()
+test_term input = do
+  term <- doParseIC input
+  _ <- normal term
+  inters <- readIORef gINTERS
+  putStrLn $ "- WORK: " ++ show inters
+
+test_ic :: IO ()
+test_ic = do
+
+  test_term $ """
+!F = λf.
+  !{f0,f1} = f;
+  !{f0,f1} = λx.(f0 (f1 x));
+  λx.(f0 (f1 x));
+((F λnx.((nx λt0.λf0.f0) λt1.λf1.t1)) λT.λF.T)
+"""
+  inters <- readIORef gINTERS
+  putStrLn $ "- WORK: " ++ show inters
+
+main :: IO ()
+main = test_ic
+
+python:
+import threading
+from collections import deque
+import sys
+
+# Implementing the parser and evaluation with debugger integrated, as per the prompt.
+
+# AST definitions
+class Term:
+    pass
+
+class Var(Term):
+    def __init__(self, name: int):
+        self.name = name
+
+    def __str__(self):
+        return name_str(self.name)
+    __repr__ = __str__
+
+class Let(Term):
+    def __init__(self, name: int, t1: Term, t2: Term):
+        self.name = name
+        self.t1 = t1
+        self.t2 = t2
+
+    def __str__(self):
+        return f"! {name_str(self.name)} = {self.t1}; {self.t2}"
+    __repr__ = __str__
+
+class Era(Term):
+    def __str__(self):
+        return "*"
+    __repr__ = __str__
+
+class Sup(Term):
+    def __init__(self, label: int, left: Term, right: Term):
+        self.label = label
+        self.left = left
+        self.right = right
+
+    def __str__(self):
+        l = self.label
+        if l == 0:
+            return "{" + f"{self.left},{self.right}" + "}"
+        elif l == 1:
+            return "<" + f"{self.left},{self.right}" + ">"
+        else:
+            return f"&{l}{{{self.left},{self.right}}}"
+    __repr__ = __str__
+
+class Dup(Term):
+    def __init__(self, label: int, x: int, y: int, val: Term, body: Term):
+        self.label = label
+        self.x = x
+        self.y = y
+        self.val = val
+        self.body = body
+
+    def __str__(self):
+        l = self.label
+        xs = name_str(self.x)
+        ys = name_str(self.y)
+        if l == 0:
+            return f"! {{{xs},{ys}}} = {self.val}; {self.body}"
+        elif l == 1:
+            return f"! <{xs},{ys}> = {self.val}; {self.body}"
+        else:
+            return f"! &{l}{{{xs},{ys}}} = {self.val}; {self.body}"
+    __repr__ = __str__
+
+class Lam(Term):
+    def __init__(self, label: int, x: int, body: Term):
+        self.label = label
+        self.x = x
+        self.body = body
+
+    def __str__(self):
+        l = self.label
+        xs = name_str(self.x)
+        if l == 0:
+            return f"λ{xs}.{self.body}"
+        elif l == 1:
+            return f"Λ{xs}.{self.body}"
+        else:
+            return f"&{l} λ{xs}.{self.body}"
+    __repr__ = __str__
+
+class App(Term):
+    def __init__(self, label: int, func: Term, arg: Term):
+        self.label = label
+        self.func = func
+        self.arg = arg
+
+    def __str__(self):
+        l = self.label
+        if l == 0:
+            return f"({self.func} {self.arg})"
+        elif l == 1:
+            return f"[{self.func} {self.arg}]"
+        else:
+            return f"&{l} ({self.func} {self.arg})"
+    __repr__ = __str__
+
+# Globals for substitution, fresh names, inters, and debugger
+_gSUBST = {}
+_gFRESH = 0
+_gINTERS = 0
+_gSTOP = False
+
+_gSUBST_lock = threading.Lock()
+_gFRESH_lock = threading.Lock()
+_gINTERS_lock = threading.Lock()
+_gSTOP_lock = threading.Lock()
+
+def set_subst(name: int, term: Term):
+    with _gSUBST_lock:
+        _gSUBST[name] = term
+
+def get_subst(name: int):
+    with _gSUBST_lock:
+        if name in _gSUBST:
+            return _gSUBST.pop(name)
+    return None
+
+def fresh():
+    global _gFRESH
+    with _gFRESH_lock:
+        n = _gFRESH
+        _gFRESH += 1
+    return n
+
+def inc_inters():
+    global _gINTERS
+    with _gINTERS_lock:
+        _gINTERS += 1
+
+def read_inters():
+    with _gINTERS_lock:
+        return _gINTERS
+
+def name_str(k: int) -> str:
+    target = k + 1
+    queue = deque([""])
+    count = 0
+    while queue:
+        prefix = queue.popleft()
+        if count == target:
+            return prefix
+        count += 1
+        for c in map(chr, range(ord('a'), ord('z')+1)):
+            queue.append(c + prefix)
+    return f"v{k}"
+
+# Debugger controls
+def mark_reduction():
+    global _gSTOP
+    with _gSTOP_lock:
+        _gSTOP = True
+
+def has_reduced():
+    with _gSTOP_lock:
+        return _gSTOP
+
+def reset_reduction():
+    global _gSTOP
+    with _gSTOP_lock:
+        _gSTOP = False
+
+# Evaluation primitives with debugger marking
+def app_era(f: Term, arg: Term):
+    if isinstance(f, Era):
+        inc_inters()
+        mark_reduction()
+        return Era()
+    else:
+        raise RuntimeError("app_era: expected Era as first argument")
+
+def app_lam(f: Term, arg: Term, app_lab: int):
+    if isinstance(f, Lam):
+        lam_lab = f.label
+        nam = f.x
+        bod = f.body
+        inc_inters()
+        mark_reduction()
+        if lam_lab == app_lab:
+            set_subst(nam, arg)
+            return whnf(bod)
+        else:
+            y = fresh()
+            z = fresh()
+            set_subst(nam, Lam(app_lab, y, Var(z)))
+            inner = App(lam_lab, arg, Var(y))
+            newb = App(app_lab, bod, inner)
+            return whnf(Lam(lam_lab, z, newb))
+    else:
+        raise RuntimeError("app_lam: expected Lam as first argument")
+
+def app_sup(f: Term, arg: Term, app_lab: int):
+    if isinstance(f, Sup):
+        inc_inters()
+        mark_reduction()
+        lab = f.label
+        left = f.left
+        right = f.right
+        c0 = fresh()
+        c1 = fresh()
+        a0 = App(app_lab, left, Var(c0))
+        a1 = App(app_lab, right, Var(c1))
+        return whnf(Dup(lab, c0, c1, arg, Sup(lab, a0, a1)))
+    else:
+        raise RuntimeError("app_sup: expected Sup as first argument")
+
+def app_dup(term: Term):
+    if isinstance(term, App) and isinstance(term.arg, Dup):
+        app_lab = term.label
+        f = term.func
+        dup: Dup = term.arg
+        inc_inters()
+        mark_reduction()
+        return whnf(Dup(dup.label, dup.x, dup.y, dup.val, App(app_lab, f, dup.body)))
+    else:
+        raise RuntimeError("app_dup: expected App with Dup")
+
+def dup_era(dup_term: Dup, v: Term):
+    if isinstance(v, Era):
+        inc_inters()
+        mark_reduction()
+        set_subst(dup_term.x, Era())
+        set_subst(dup_term.y, Era())
+        return whnf(dup_term.body)
+    else:
+        raise RuntimeError("dup_era: expected Dup and Era")
+
+def dup_lam(dup_term: Dup, v: Term):
+    if isinstance(v, Lam):
+        inc_inters()
+        mark_reduction()
+        lam_lab = v.label
+        x = v.x
+        f = v.body
+        x0 = fresh()
+        x1 = fresh()
+        f0 = fresh()
+        f1 = fresh()
+        set_subst(dup_term.x, Lam(lam_lab, x0, Var(f0)))
+        set_subst(dup_term.y, Lam(lam_lab, x1, Var(f1)))
+        set_subst(x, Sup(dup_term.label, Var(x0), Var(x1)))
+        return whnf(Dup(dup_term.label, f0, f1, f, dup_term.body))
+    else:
+        raise RuntimeError("dup_lam: expected Dup and Lam")
+
+def dup_sup(dup_term: Dup, v: Term):
+    if isinstance(v, Sup):
+        inc_inters()
+        mark_reduction()
+        sup_lab = v.label
+        a = v.left
+        b = v.right
+        if dup_term.label == sup_lab:
+            set_subst(dup_term.x, a)
+            set_subst(dup_term.y, b)
+            return whnf(dup_term.body)
+        else:
+            a0 = fresh()
+            a1 = fresh()
+            b0 = fresh()
+            b1 = fresh()
+            set_subst(dup_term.x, Sup(sup_lab, Var(a0), Var(b0)))
+            set_subst(dup_term.y, Sup(sup_lab, Var(a1), Var(b1)))
+            inner = Dup(dup_term.label, b0, b1, b, dup_term.body)
+            return whnf(Dup(dup_term.label, a0, a1, a, inner))
+    else:
+        raise RuntimeError("dup_sup: expected Dup and Sup")
+
+def dup_dup(dup_term: Dup, v: Term):
+    if isinstance(v, Dup):
+        inc_inters()
+        mark_reduction()
+        return whnf(Dup(dup_term.label, dup_term.x, dup_term.y, v.x, Dup(dup_term.label, v.x, v.y, v.val, dup_term.body)))
+    else:
+        raise RuntimeError("dup_dup: expected Dup with inner Dup")
+
+# Whnf with debug prints and reduction marking
+def whnf(term: Term) -> Term:
+    if isinstance(term, Var):
+        sub = get_subst(term.name)
+        if sub is not None:
+            mark_reduction()
+            return whnf(sub)
+        else:
+            return term
+    elif isinstance(term, Let):
+        print("LET")
+        v_whnf = whnf(term.t1)
+        if has_reduced():
+            return Let(term.name, v_whnf, term.t2)
+        else:
+            set_subst(term.name, v_whnf)
+            mark_reduction()
+            return whnf(term.t2)
+    elif isinstance(term, App):
+        f_whnf = whnf(term.func)
+        if has_reduced():
+            return App(term.label, f_whnf, term.arg)
+        else:
+            print("APP")
+            if isinstance(f_whnf, Lam):
+                return app_lam(f_whnf, term.arg, term.label)
+            elif isinstance(f_whnf, Sup):
+                return app_sup(f_whnf, term.arg, term.label)
+            elif isinstance(f_whnf, Era):
+                return app_era(f_whnf, term.arg)
+            elif isinstance(f_whnf, Dup):
+                return app_dup(App(term.label, f_whnf, term.arg))
+            else:
+                return App(term.label, f_whnf, term.arg)
+    elif isinstance(term, Dup):
+        print("DUP")
+        v_whnf = whnf(term.val)
+        if has_reduced():
+            return Dup(term.label, term.x, term.y, v_whnf, term.body)
+        else:
+            if isinstance(v_whnf, Lam):
+                return dup_lam(term, v_whnf)
+            elif isinstance(v_whnf, Sup):
+                return dup_sup(term, v_whnf)
+            elif isinstance(v_whnf, Era):
+                return dup_era(term, v_whnf)
+            elif isinstance(v_whnf, Dup):
+                return dup_dup(term, v_whnf)
+            else:
+                return Dup(term.label, term.x, term.y, v_whnf, term.body)
+    else:
+        return term
+
+# Step and normal with debugging
+def step(term: Term) -> Term:
+    reset_reduction()
+    term1 = whnf(term)
+    if has_reduced():
+        return term1
+    else:
+        reset_reduction()
+        if isinstance(term1, Lam):
+            body1 = step(term1.body)
+            if has_reduced():
+                mark_reduction()
+                return Lam(term1.label, term1.x, body1)
+            else:
+                return term1
+        elif isinstance(term1, App):
+            f1 = step(term1.func)
+            if has_reduced():
+                mark_reduction()
+                return App(term1.label, f1, term1.arg)
+            else:
+                reset_reduction()
+                a1 = step(term1.arg)
+                if has_reduced():
+                    mark_reduction()
+                    return App(term1.label, term1.func, a1)
+                else:
+                    return term1
+        elif isinstance(term1, Sup):
+            l1 = step(term1.left)
+            if has_reduced():
+                mark_reduction()
+                return Sup(term1.label, l1, term1.right)
+            else:
+                reset_reduction()
+                r1 = step(term1.right)
+                if has_reduced():
+                    mark_reduction()
+                    return Sup(term1.label, term1.left, r1)
+                else:
+                    return term1
+        elif isinstance(term1, Dup):
+            v1 = step(term1.val)
+            if has_reduced():
+                mark_reduction()
+                return Dup(term1.label, term1.x, term1.y, v1, term1.body)
+            else:
+                reset_reduction()
+                b1 = step(term1.body)
+                if has_reduced():
+                    mark_reduction()
+                    return Dup(term1.label, term1.x, term1.y, term1.val, b1)
+                else:
+                    return term1
+        else:
+            return term1
+
+def show_subst():
+    with _gSUBST_lock:
+        if not _gSUBST:
+            return ""
+        lines = []
+        for k, v in _gSUBST.items():
+            lines.append(f"{name_str(k)} <- {v}")
+        return "\n".join(lines) + "\n"
+
+def normal(term: Term) -> Term:
+    subst_str = show_subst()
+    if subst_str:
+        print(subst_str, end="")
+    print(term)
+    print("-" * 40)
+    term1 = step(term)
+    if has_reduced():
+        return normal(term1)
+    else:
+        return term1
+
+# Parser implementation
+class ParseError(Exception):
+    pass
+
+class Parser:
+    def __init__(self, text: str):
+        self.text = text
+        self.pos = 0
+        self.len = len(text)
+        self.global_map = {}
+
+    def current(self):
+        if self.pos < self.len:
+            return self.text[self.pos]
+        return None
+
+    def eof(self):
+        return self.pos >= self.len
+
+    def advance(self, n=1):
+        self.pos += n
+
+    def skip_whitespace_and_comments(self):
+        while True:
+            while not self.eof() and self.current().isspace():
+                self.advance()
+            if self.pos+1 < self.len and self.text[self.pos:self.pos+2] == "//":
+                self.advance(2)
+                while not self.eof() and self.current() not in "\r\n":
+                    self.advance()
+                while not self.eof() and self.current() in "\r\n":
+                    self.advance()
+                continue
+            break
+
+    def match_string(self, s: str) -> bool:
+        self.skip_whitespace_and_comments()
+        if self.text.startswith(s, self.pos):
+            self.advance(len(s))
+            return True
+        return False
+
+    def expect_string(self, s: str):
+        if not self.match_string(s):
+            raise ParseError(f"Expected '{s}' at position {self.pos}")
+
+    def parse_natural(self) -> int:
+        self.skip_whitespace_and_comments()
+        start = self.pos
+        while not self.eof() and self.current().isdigit():
+            self.advance()
+        if start == self.pos:
+            raise ParseError(f"Expected natural number at position {self.pos}")
+        return int(self.text[start:self.pos])
+
+    def parseVarName(self) -> str:
+        self.skip_whitespace_and_comments()
+        if not self.eof() and self.current() == '$':
+            start = self.pos
+            self.advance()
+            while not self.eof() and (self.current().isalnum() or self.current() == '_'):
+                self.advance()
+            return self.text[start:self.pos]
+        else:
+            start = self.pos
+            if not self.eof() and (self.current().isalnum() or self.current() == '_'):
+                while not self.eof() and (self.current().isalnum() or self.current() == '_'):
+                    self.advance()
+                return self.text[start:self.pos]
+            else:
+                raise ParseError(f"Expected variable name at position {self.pos}")
+
+    def isGlobalName(self, name: str) -> bool:
+        return name.startswith('$')
+
+    def getGlobalName(self, gname: str) -> int:
+        if gname in self.global_map:
+            return self.global_map[gname]
+        else:
+            n = fresh()
+            self.global_map[gname] = n
+            return n
+
+    def bindVar(self, name: str, ctx: dict) -> (int, dict):
+        if self.isGlobalName(name):
+            n = self.getGlobalName(name)
+            return n, ctx
+        else:
+            n = fresh()
+            ctx2 = ctx.copy()
+            ctx2[name] = n
+            return n, ctx2
+
+    def getVar(self, name: str, ctx: dict) -> int:
+        if self.isGlobalName(name):
+            return self.getGlobalName(name)
+        else:
+            if name in ctx:
+                return ctx[name]
+            else:
+                raise ParseError(f"Unbound local variable: {name}")
+
+    def parse(self):
+        self.skip_whitespace_and_comments()
+        term = self.parseTerm({})
+        self.skip_whitespace_and_comments()
+        if not self.eof():
+            raise ParseError(f"Unexpected trailing input at position {self.pos}")
+        return term
+
+    def parseTerm(self, ctx: dict) -> Term:
+        self.skip_whitespace_and_comments()
+        pos0 = self.pos
+        for parse_fn in [self.parseApp, self.parseLet, self.parseLam, self.parseSup, self.parseDup]:
+            try:
+                return parse_fn(ctx)
+            except ParseError:
+                self.pos = pos0
+        return self.parseSimpleTerm(ctx)
+
+    def parseSimpleTerm(self, ctx: dict) -> Term:
+        self.skip_whitespace_and_comments()
+        if self.pos < self.len and self.current() == '*':
+            return self.parseEra()
+        elif self.pos < self.len and self.current() == '(':
+            self.expect_string('(')
+            t = self.parseTerm(ctx)
+            self.expect_string(')')
+            return t
+        else:
+            return self.parseVar(ctx)
+
+    def parseVar(self, ctx: dict) -> Term:
+        name = self.parseVarName()
+        n = self.getVar(name, ctx)
+        return Var(n)
+
+    def parseEra(self) -> Term:
+        self.expect_string('*')
+        return Era()
+
+    def parseLam(self, ctx: dict) -> Term:
+        self.skip_whitespace_and_comments()
+        pos0 = self.pos
+        if self.match_string("&"):
+            try:
+                lab = self.parse_natural()
+                if not self.match_string("λ"):
+                    raise ParseError("Expected λ after label in lambda")
+                varname = self.parseVarName()
+                n, ctx2 = self.bindVar(varname, ctx)
+                self.expect_string(".")
+                body = self.parseTerm(ctx2)
+                return Lam(lab, n, body)
+            except ParseError:
+                self.pos = pos0
+        if self.match_string("λ"):
+            varname = self.parseVarName()
+            n, ctx2 = self.bindVar(varname, ctx)
+            self.expect_string(".")
+            body = self.parseTerm(ctx2)
+            return Lam(0, n, body)
+        if self.match_string("Λ"):
+            varname = self.parseVarName()
+            n, ctx2 = self.bindVar(varname, ctx)
+            self.expect_string(".")
+            body = self.parseTerm(ctx2)
+            return Lam(1, n, body)
+        raise ParseError("Not a lambda")
+
+    def parseApp(self, ctx: dict) -> Term:
+        self.skip_whitespace_and_comments()
+        pos0 = self.pos
+        if self.match_string("&"):
+            try:
+                lab = self.parse_natural()
+                self.expect_string("(")
+                f = self.parseTerm(ctx)
+                self.skip_whitespace_and_comments()
+                a = self.parseTerm(ctx)
+                self.expect_string(")")
+                return App(lab, f, a)
+            except ParseError:
+                self.pos = pos0
+        if self.match_string("("):
+            f = self.parseTerm(ctx)
+            self.skip_whitespace_and_comments()
+            a = self.parseTerm(ctx)
+            self.expect_string(")")
+            return App(0, f, a)
+        if self.match_string("["):
+            f = self.parseTerm(ctx)
+            self.skip_whitespace_and_comments()
+            a = self.parseTerm(ctx)
+            self.expect_string("]")
+            return App(1, f, a)
+        raise ParseError("Not an application")
+
+    def parseSup(self, ctx: dict) -> Term:
+        self.skip_whitespace_and_comments()
+        pos0 = self.pos
+        if self.match_string("&"):
+            try:
+                lab = self.parse_natural()
+                self.expect_string("{")
+                a = self.parseTerm(ctx)
+                self.expect_string(",")
+                b = self.parseTerm(ctx)
+                self.expect_string("}")
+                return Sup(lab, a, b)
+            except ParseError:
+                self.pos = pos0
+        if self.match_string("{"):
+            a = self.parseTerm(ctx)
+            self.expect_string(",")
+            b = self.parseTerm(ctx)
+            self.expect_string("}")
+            return Sup(0, a, b)
+        if self.match_string("<"):
+            a = self.parseTerm(ctx)
+            self.expect_string(",")
+            b = self.parseTerm(ctx)
+            self.expect_string(">")
+            return Sup(1, a, b)
+        raise ParseError("Not a Sup")
+
+    def parseDup(self, ctx: dict) -> Term:
+        self.skip_whitespace_and_comments()
+        pos0 = self.pos
+        if self.match_string("!"):
+            pos1 = self.pos
+            if self.match_string("&"):
+                try:
+                    lab = self.parse_natural()
+                    if self.match_string("{"):
+                        name1 = self.parseVarName()
+                        self.expect_string(",")
+                        name2 = self.parseVarName()
+                        self.expect_string("}")
+                        self.expect_string("=")
+                        val = self.parseTerm(ctx)
+                        self.expect_string(";")
+                        n1, ctx1 = self.bindVar(name1, ctx)
+                        n2, ctx2 = self.bindVar(name2, ctx1)
+                        body = self.parseTerm(ctx2)
+                        return Dup(lab, n1, n2, val, body)
+                    else:
+                        raise ParseError("Expected { after !&label in Dup")
+                except ParseError:
+                    self.pos = pos0
+                    raise
+            else:
+                self.pos = pos1
+                if self.match_string("{"):
+                    name1 = self.parseVarName()
+                    self.expect_string(",")
+                    name2 = self.parseVarName()
+                    self.expect_string("}")
+                    self.expect_string("=")
+                    val = self.parseTerm(ctx)
+                    self.expect_string(";")
+                    n1, ctx1 = self.bindVar(name1, ctx)
+                    n2, ctx2 = self.bindVar(name2, ctx1)
+                    body = self.parseTerm(ctx2)
+                    return Dup(0, n1, n2, val, body)
+                self.pos = pos1
+                if self.match_string("<"):
+                    name1 = self.parseVarName()
+                    self.expect_string(",")
+                    name2 = self.parseVarName()
+                    self.expect_string(">")
+                    self.expect_string("=")
+                    val = self.parseTerm(ctx)
+                    self.expect_string(";")
+                    n1, ctx1 = self.bindVar(name1, ctx)
+                    n2, ctx2 = self.bindVar(name2, ctx1)
+                    body = self.parseTerm(ctx2)
+                    return Dup(1, n1, n2, val, body)
+        raise ParseError("Not a Dup")
+
+    def parseLet(self, ctx: dict) -> Term:
+        self.skip_whitespace_and_comments()
+        pos0 = self.pos
+        if self.match_string("!"):
+            name_token = self.parseVarName()
+            self.expect_string("=")
+            t1 = self.parseTerm(ctx)
+            self.expect_string(";")
+            n, ctx2 = self.bindVar(name_token, ctx)
+            t2 = self.parseTerm(ctx2)
+            return Let(n, t1, t2)
+        self.pos = pos0
+        raise ParseError("Not a Let")
+
+def parseIC(input_str: str) -> Term:
+    parser = Parser(input_str)
+    return parser.parse()
+
+def doParseIC(input_str: str) -> Term:
+    try:
+        return parseIC(input_str)
+    except ParseError as e:
+        print(f"Parse error: {e}", file=sys.stderr)
+        raise
+
+def test_term(input_str: str):
+    global _gINTERS, _gSUBST, _gFRESH
+    # reset globals
+    with _gINTERS_lock:
+        _gINTERS = 0
+    with _gSUBST_lock:
+        _gSUBST.clear()
+    with _gFRESH_lock:
+        _gFRESH = 0
+    term = doParseIC(input_str)
+    print("Initial term and reductions:")
+    norm = normal(term)
+    inters = read_inters()
+    print(f"- WORK: {inters}")
+
+# Now run the provided test expression:
+expr = "! h = λa.! {b,c} = a; ! {e,f} = λd.(b (c d)); λg.(e (f g)); ((h λi.((i λj.λk.k) λl.λm.l)) λn.λo.n)"
+test_term(expr)
+
+incomplete static ndarray ic engine
+
+# static_ic.py
+
+import numpy as np
+
+# --- Type tags ---
+TYPE_VAR = 0
+TYPE_LET = 1
+TYPE_ERA = 2
+TYPE_SUP = 3
+TYPE_DUP = 4
+TYPE_LAM = 5
+TYPE_APP = 6
+
+# --- Column indices in static array ---
+COL_TYPE    = 0
+COL_C1      = 1
+COL_C2      = 2
+COL_VAR     = 3
+COL_ACTIVE  = 4
+COL_LABEL   = 5
+COL_PARENT  = 6
+COL_PFIELD  = 7
+COL_X       = 8
+COL_Y       = 9
+
+NUM_COLS = 10
+
+# --- AST classes ---
+class Term: pass
+class Var(Term):
+    def __init__(self, name:int): self.name=name
+    def __repr__(self): return f"Var({self.name})"
+class Era(Term):
+    def __repr__(self): return "*"
+class Let(Term):
+    def __init__(self, name:int, t1:Term, t2:Term):
+        self.name, self.t1, self.t2 = name, t1, t2
+    def __repr__(self): return f"Let({self.name}={self.t1};{self.t2})"
+class Sup(Term):
+    def __init__(self, label:int, left:Term, right:Term):
+        self.label, self.left, self.right = label, left, right
+    def __repr__(self): return f"Sup({self.label},{self.left},{self.right})"
+class Dup(Term):
+    def __init__(self, label:int, x:int, y:int, val:Term, body:Term):
+        self.label, self.x, self.y, self.val, self.body = label, x, y, val, body
+    def __repr__(self): return f"Dup({self.label},{self.x},{self.y},{self.val},{self.body})"
+class Lam(Term):
+    def __init__(self, label:int, x:int, body:Term):
+        self.label, self.x, self.body = label, x, body
+    def __repr__(self): return f"Lam({self.label},{self.x},{self.body})"
+class App(Term):
+    def __init__(self, label:int, func:Term, arg:Term):
+        self.label, self.func, self.arg = label, func, arg
+    def __repr__(self): return f"App({self.label},{self.func},{self.arg})"
+
+# --- Parser for IC syntax ---
+class ParseError(Exception): pass
+
+class ParserIC:
+    def __init__(self, text:str):
+        self.text = text; self.pos = 0; self.len = len(text)
+        self.global_map = {}; self._fresh = 0
+
+    def fresh(self):
+        v = self._fresh; self._fresh += 1; return v
+
+    def skip_ws(self):
+        while self.pos < self.len and self.text[self.pos].isspace():
+            self.pos += 1
+
+    def peek(self):
+        self.skip_ws()
+        return self.text[self.pos] if self.pos < self.len else None
+
+    def consume(self, s:str):
+        self.skip_ws()
+        if self.text.startswith(s, self.pos):
+            self.pos += len(s); return True
+        return False
+
+    def expect(self, s:str):
+        if not self.consume(s):
+            raise ParseError(f"Expected '{s}' at {self.pos}")
+
+    def parseVarName(self):
+        self.skip_ws()
+        if self.pos < self.len and (self.text[self.pos].isalpha() or self.text[self.pos]=='$' or self.text[self.pos]=='_'):
+            start = self.pos
+            if self.text[self.pos] == '$':
+                self.pos += 1
+            while self.pos < self.len and (self.text[self.pos].isalnum() or self.text[self.pos]=='_'):
+                self.pos += 1
+            return self.text[start:self.pos]
+        raise ParseError(f"Expected variable at {self.pos}")
+
+    def isGlobal(self, name:str):
+        return name.startswith('$')
+
+    def getGlobal(self, name:str):
+        if name not in self.global_map:
+            self.global_map[name] = self.fresh()
+        return self.global_map[name]
+
+    def getVarId(self, name:str, ctx:dict):
+        if self.isGlobal(name):
+            return self.getGlobal(name)
+        if name not in ctx:
+            ctx[name] = self.fresh()
+        return ctx[name]
+
+    def parse(self):
+        term = self.parseTerm({})
+        self.skip_ws()
+        if self.pos < self.len:
+            raise ParseError(f"Trailing at {self.pos}")
+        return term
+
+    def parseTerm(self, ctx):
+        self.skip_ws(); pos0 = self.pos
+        for fn in (self.parseLet, self.parseLam, self.parseDup, self.parseSup, self.parseApp):
+            try:
+                return fn(ctx)
+            except ParseError:
+                self.pos = pos0
+        return self.parseSimple(ctx)
+
+    def parseSimple(self, ctx):
+        c = self.peek()
+        if c == '(':
+            self.expect('(')
+            t = self.parseTerm(ctx)
+            self.expect(')')
+            return t
+        if c == '*':
+            self.pos += 1
+            return Era()
+        name = self.parseVarName()
+        vid = self.getVarId(name, ctx)
+        return Var(vid)
+
+    def parseLet(self, ctx):
+        if self.consume('!'):
+            name = self.parseVarName()
+            self.expect('=')
+            t1 = self.parseTerm(ctx)
+            self.expect(';')
+            vid = self.getVarId(name, ctx)
+            t2 = self.parseTerm(ctx)
+            return Let(vid, t1, t2)
+        raise ParseError()
+
+    def parseLam(self, ctx):
+        pos0 = self.pos
+        if self.consume('&'):
+            num = ''
+            while self.peek() and self.peek().isdigit():
+                num += self.text[self.pos]; self.pos += 1
+            lab = int(num or 0)
+            self.expect('λ')
+            name = self.parseVarName()
+            vid = self.getVarId(name, ctx)
+            self.expect('.')
+            body = self.parseTerm(dict(ctx))
+            return Lam(lab, vid, body)
+        if self.consume('λ'):
+            name = self.parseVarName(); vid = self.getVarId(name, ctx)
+            self.expect('.')
+            return Lam(0, vid, self.parseTerm(dict(ctx)))
+        if self.consume('Λ'):
+            name = self.parseVarName(); vid = self.getVarId(name, ctx)
+            self.expect('.')
+            return Lam(1, vid, self.parseTerm(dict(ctx)))
+        raise ParseError()
+
+    def parseApp(self, ctx):
+        pos0 = self.pos
+        if self.consume('&'):
+            num = ''
+            while self.peek() and self.peek().isdigit():
+                num += self.text[self.pos]; self.pos += 1
+            lab = int(num or 0)
+            self.expect('(')
+            f = self.parseTerm(ctx)
+            a = self.parseTerm(ctx)
+            self.expect(')')
+            return App(lab, f, a)
+        if self.consume('('):
+            f = self.parseTerm(ctx); a = self.parseTerm(ctx); self.expect(')')
+            return App(0, f, a)
+        if self.consume('['):
+            f = self.parseTerm(ctx); a = self.parseTerm(ctx); self.expect(']')
+            return App(1, f, a)
+        raise ParseError()
+
+    def parseSup(self, ctx):
+        pos0 = self.pos
+        if self.consume('&'):
+            num = ''
+            while self.peek() and self.peek().isdigit():
+                num += self.text[self.pos]; self.pos += 1
+            lab = int(num or 0)
+            if self.consume('{'):
+                left = self.parseTerm(ctx); self.expect(','); right = self.parseTerm(ctx); self.expect('}')
+                return Sup(lab, left, right)
+            self.pos = pos0; raise ParseError()
+        if self.consume('{'):
+            left = self.parseTerm(ctx); self.expect(','); right = self.parseTerm(ctx); self.expect('}')
+            return Sup(0, left, right)
+        if self.consume('<'):
+            left = self.parseTerm(ctx); self.expect(','); right = self.parseTerm(ctx); self.expect('>')
+            return Sup(1, left, right)
+        raise ParseError()
+
+    def parseDup(self, ctx):
+        pos0 = self.pos
+        if self.consume('!'):
+            lab = 0
+            if self.consume('&'):
+                num = ''
+                while self.peek() and self.peek().isdigit():
+                    num += self.text[self.pos]; self.pos += 1
+                lab = int(num or 0)
+            if self.consume('{'):
+                name1 = self.parseVarName(); self.expect(','); name2 = self.parseVarName(); self.expect('}')
+            elif self.consume('<'):
+                name1 = self.parseVarName(); self.expect(','); name2 = self.parseVarName(); self.expect('>')
+                lab = 1 if lab==0 else lab
+            else:
+                self.pos = pos0; raise ParseError()
+            self.expect('=')
+            val = self.parseTerm(ctx)
+            self.expect(';')
+            vid1 = self.getVarId(name1, ctx)
+            vid2 = self.getVarId(name2, ctx)
+            body = self.parseTerm(ctx)
+            return Dup(lab, vid1, vid2, val, body)
+        raise ParseError()
+
+# --- Layout & helpers ---
+def build_initial_layout(term):
+    offsets, parents, order = {}, {}, []
+    def dfs(u, parent_off=None, field=None):
+        if id(u) not in offsets:
+            off = len(order); offsets[id(u)] = off; order.append(u)
+            if parent_off is not None:
+                parents[off] = (parent_off, field)
+            if isinstance(u, Lam):
+                dfs(u.body, off, COL_C1)
+            elif isinstance(u, App):
+                dfs(u.func, off, COL_C1); dfs(u.arg, off, COL_C2)
+            elif isinstance(u, Let):
+                dfs(u.t1, off, COL_C1); dfs(u.t2, off, COL_C2)
+            elif isinstance(u, Sup):
+                dfs(u.left, off, COL_C1); dfs(u.right, off, COL_C2)
+            elif isinstance(u, Dup):
+                dfs(u.val, off, COL_C1); dfs(u.body, off, COL_C2)
+        else:
+            off = offsets[id(u)]
+            if parent_off is not None:
+                parents[off] = (parent_off, field)
+        return offsets[id(u)]
+    dfs(term)
+    return offsets, parents, order
+
+def allocate_static_array(N_initial, MAX_DEPTH, K):
+    block_size = N_initial + N_initial * K * MAX_DEPTH
+    arr = np.zeros((block_size, NUM_COLS), dtype=np.int32)
+    arr[:, COL_TYPE]   = -1
+    arr[:, COL_ACTIVE] = 0
+    arr[:, COL_PARENT] = -1
+    arr[:, COL_PFIELD] = 0
+    return arr
+
+def init_static_array(term, MAX_DEPTH, K):
+    offsets, parents, order = build_initial_layout(term)
+    N = len(order)
+    nodes = allocate_static_array(N, MAX_DEPTH, K)
+    for off, u in enumerate(order):
+        if isinstance(u, Var):
+            nodes[off, COL_TYPE]   = TYPE_VAR
+            nodes[off, COL_VAR ]   = u.name
+            nodes[off, COL_ACTIVE] = 1
+        elif isinstance(u, Era):
+            nodes[off, COL_TYPE]   = TYPE_ERA
+            nodes[off, COL_ACTIVE] = 1
+        elif isinstance(u, Lam):
+            c = offsets[id(u.body)]
+            nodes[off, COL_TYPE]   = TYPE_LAM
+            nodes[off, COL_C1]     = c
+            nodes[off, COL_VAR]    = u.x
+            nodes[off, COL_ACTIVE] = 1
+            nodes[off, COL_LABEL]  = u.label
+            nodes[c, COL_PARENT]   = off; nodes[c, COL_PFIELD] = COL_C1
+        elif isinstance(u, App):
+            f = offsets[id(u.func)]; a = offsets[id(u.arg)]
+            nodes[off, COL_TYPE]   = TYPE_APP
+            nodes[off, COL_C1]     = f
+            nodes[off, COL_C2]     = a
+            nodes[off, COL_ACTIVE] = 1
+            nodes[off, COL_LABEL]  = u.label
+            nodes[f, COL_PARENT]   = off; nodes[f, COL_PFIELD] = COL_C1
+            nodes[a, COL_PARENT]   = off; nodes[a, COL_PFIELD] = COL_C2
+        elif isinstance(u, Let):
+            t1 = offsets[id(u.t1)]; t2 = offsets[id(u.t2)]
+            nodes[off, COL_TYPE]   = TYPE_LET
+            nodes[off, COL_C1]     = t1
+            nodes[off, COL_C2]     = t2
+            nodes[off, COL_VAR]    = u.name
+            nodes[off, COL_ACTIVE] = 1
+            nodes[t1, COL_PARENT]  = off; nodes[t1, COL_PFIELD] = COL_C1
+            nodes[t2, COL_PARENT]  = off; nodes[t2, COL_PFIELD] = COL_C2
+        elif isinstance(u, Sup):
+            l = offsets[id(u.left)]; r = offsets[id(u.right)]
+            nodes[off, COL_TYPE]   = TYPE_SUP
+            nodes[off, COL_C1]     = l
+            nodes[off, COL_C2]     = r
+            nodes[off, COL_ACTIVE] = 1
+            nodes[off, COL_LABEL]  = u.label
+            nodes[l, COL_PARENT]   = off; nodes[l, COL_PFIELD] = COL_C1
+            nodes[r, COL_PARENT]   = off; nodes[r, COL_PFIELD] = COL_C2
+        elif isinstance(u, Dup):
+            v = offsets[id(u.val)]; b = offsets[id(u.body)]
+            nodes[off, COL_TYPE]   = TYPE_DUP
+            nodes[off, COL_C1]     = v
+            nodes[off, COL_C2]     = b
+            nodes[off, COL_ACTIVE] = 1
+            nodes[off, COL_LABEL]  = u.label
+            nodes[off, COL_X]      = u.x
+            nodes[off, COL_Y]      = u.y
+            nodes[v, COL_PARENT]   = off; nodes[v, COL_PFIELD] = COL_C1
+            nodes[b, COL_PARENT]   = off; nodes[b, COL_PFIELD] = COL_C2
+    return nodes, len(order)
+
+def clone_base(i, N, K, d):
+    return N + (d * N + i) * K
+
+def collect_subtree(nodes, root_off, max_iter=50):
+    bs = nodes.shape[0]
+    parent = nodes[:, COL_PARENT]
+    mask_sub = np.zeros(bs, bool)
+    mask_front = np.zeros(bs, bool)
+    mask_sub[root_off] = True
+    mask_front[root_off] = True
+    for _ in range(max_iter):
+        idxs = np.nonzero(mask_front)[0]
+        if idxs.size == 0: break
+        mask_front[:] = False
+        valid = (parent >= 0)
+        ii = np.nonzero(valid)[0]
+        ps = parent[ii]
+        m = mask_sub[ps]
+        children = ii[m]
+        new = children[~mask_sub[children]]
+        if new.size == 0: break
+        mask_sub[new] = True
+        mask_front[new] = True
+    return mask_sub
+
+# --- static_run with general beta and nested-Let for App-Lam ---
+def static_run(nodes, N_initial, MAX_DEPTH, K):
+    bs = nodes.shape[0]
+    root_off = 0
+    for d in range(MAX_DEPTH):
+        types  = nodes[:, COL_TYPE]
+        active = nodes[:, COL_ACTIVE]
+        c1     = nodes[:, COL_C1]
+        mask_app = (types == TYPE_APP) & (active == 1)
+        valid = (c1>=0)&(c1<bs)
+        ftype = np.full(bs, -1)
+        ii = np.nonzero(valid)[0]
+        ftype[ii] = nodes[c1[ii], COL_TYPE]
+        mask_al = mask_app & (ftype == TYPE_LAM)
+        idxs = np.nonzero(mask_al)[0]
+        if idxs.size == 0:
+            break
+        ro = idxs[0]
+        lam_off = nodes[ro, COL_C1]; arg_off = nodes[ro, COL_C2]
+        lab_app = nodes[ro, COL_LABEL]; lam_lab = nodes[lam_off, COL_LABEL]
+        # deactivate subtree
+        mask_sub = collect_subtree(nodes, ro)
+        nodes[mask_sub, COL_ACTIVE] = 0
+        base = clone_base(ro, N_initial, K, d)
+        if lam_lab == lab_app:
+            # general beta-substitution clone
+            bound_var = nodes[lam_off, COL_VAR]
+            # gather subtree under lam_off
+            subtree = []
+            queue = [lam_off]
+            seen = {lam_off}
+            while queue:
+                u = queue.pop(0)
+                subtree.append(u)
+                u_type = nodes[u, COL_TYPE]
+                if u_type == TYPE_LAM:
+                    c = nodes[u, COL_C1]
+                    if not (nodes[c, COL_TYPE]==TYPE_VAR and nodes[c, COL_VAR]==bound_var):
+                        if c not in seen:
+                            seen.add(c); queue.append(c)
+                elif u_type in (TYPE_APP, TYPE_LET, TYPE_SUP, TYPE_DUP):
+                    for cf in (COL_C1, COL_C2):
+                        c = nodes[u, cf]
+                        if c<0: continue
+                        if nodes[c, COL_TYPE]==TYPE_VAR and nodes[c, COL_VAR]==bound_var:
+                            continue
+                        if c not in seen:
+                            seen.add(c); queue.append(c)
+            mapping = {}
+            cnt = 0
+            for u in subtree:
+                mapping[u] = base + cnt
+                cnt += 1
+                if cnt > K:
+                    raise RuntimeError("K too small for beta-clone")
+            # clone nodes
+            for u in subtree:
+                new_off = mapping[u]
+                u_type = nodes[u, COL_TYPE]
+                if u_type == TYPE_VAR:
+                    nodes[new_off, COL_TYPE] = TYPE_VAR
+                    nodes[new_off, COL_VAR]  = nodes[u, COL_VAR]
+                elif u_type == TYPE_ERA:
+                    nodes[new_off, COL_TYPE] = TYPE_ERA
+                elif u_type == TYPE_LAM:
+                    nodes[new_off, COL_TYPE]   = TYPE_LAM
+                    nodes[new_off, COL_VAR]    = nodes[u, COL_VAR]
+                    nodes[new_off, COL_LABEL]  = nodes[u, COL_LABEL]
+                    c = nodes[u, COL_C1]
+                    if nodes[c, COL_TYPE]==TYPE_VAR and nodes[c, COL_VAR]==bound_var:
+                        nodes[new_off, COL_C1] = arg_off
+                        nodes[arg_off, COL_PARENT] = new_off
+                        nodes[arg_off, COL_PFIELD] = COL_C1
+                    else:
+                        cnew = mapping[c]
+                        nodes[new_off, COL_C1] = cnew
+                        nodes[cnew, COL_PARENT] = new_off
+                        nodes[cnew, COL_PFIELD] = COL_C1
+                elif u_type == TYPE_APP:
+                    nodes[new_off, COL_TYPE]   = TYPE_APP
+                    nodes[new_off, COL_LABEL]  = nodes[u, COL_LABEL]
+                    f = nodes[u, COL_C1]; a = nodes[u, COL_C2]
+                    if nodes[f, COL_TYPE]==TYPE_VAR and nodes[f, COL_VAR]==bound_var:
+                        nodes[new_off, COL_C1] = arg_off
+                        nodes[arg_off, COL_PARENT] = new_off
+                        nodes[arg_off, COL_PFIELD] = COL_C1
+                    else:
+                        fnew = mapping[f]
+                        nodes[new_off, COL_C1] = fnew
+                        nodes[fnew, COL_PARENT] = new_off
+                        nodes[fnew, COL_PFIELD] = COL_C1
+                    if nodes[a, COL_TYPE]==TYPE_VAR and nodes[a, COL_VAR]==bound_var:
+                        nodes[new_off, COL_C2] = arg_off
+                        nodes[arg_off, COL_PARENT] = new_off
+                        nodes[arg_off, COL_PFIELD] = COL_C2
+                    else:
+                        anew = mapping[a]
+                        nodes[new_off, COL_C2] = anew
+                        nodes[anew, COL_PARENT] = new_off
+                        nodes[anew, COL_PFIELD] = COL_C2
+                elif u_type == TYPE_LET:
+                    nodes[new_off, COL_TYPE]   = TYPE_LET
+                    nodes[new_off, COL_VAR]    = nodes[u, COL_VAR]
+                    t1 = nodes[u, COL_C1]; t2 = nodes[u, COL_C2]
+                    if nodes[t1, COL_TYPE]==TYPE_VAR and nodes[t1, COL_VAR]==bound_var:
+                        nodes[new_off, COL_C1] = arg_off
+                        nodes[arg_off, COL_PARENT] = new_off
+                        nodes[arg_off, COL_PFIELD] = COL_C1
+                    else:
+                        t1n = mapping[t1]
+                        nodes[new_off, COL_C1] = t1n
+                        nodes[t1n, COL_PARENT] = new_off
+                        nodes[t1n, COL_PFIELD] = COL_C1
+                    if nodes[t2, COL_TYPE]==TYPE_VAR and nodes[t2, COL_VAR]==bound_var:
+                        nodes[new_off, COL_C2] = arg_off
+                        nodes[arg_off, COL_PARENT] = new_off
+                        nodes[arg_off, COL_PFIELD] = COL_C2
+                    else:
+                        t2n = mapping[t2]
+                        nodes[new_off, COL_C2] = t2n
+                        nodes[t2n, COL_PARENT] = new_off
+                        nodes[t2n, COL_PFIELD] = COL_C2
+                elif u_type == TYPE_SUP:
+                    nodes[new_off, COL_TYPE]   = TYPE_SUP
+                    nodes[new_off, COL_LABEL]  = nodes[u, COL_LABEL]
+                    l = nodes[u, COL_C1]; r = nodes[u, COL_C2]
+                    if nodes[l, COL_TYPE]==TYPE_VAR and nodes[l, COL_VAR]==bound_var:
+                        nodes[new_off, COL_C1] = arg_off
+                        nodes[arg_off, COL_PARENT] = new_off
+                        nodes[arg_off, COL_PFIELD] = COL_C1
+                    else:
+                        ln = mapping[l]
+                        nodes[new_off, COL_C1] = ln
+                        nodes[ln, COL_PARENT] = new_off
+                        nodes[ln, COL_PFIELD] = COL_C1
+                    if nodes[r, COL_TYPE]==TYPE_VAR and nodes[r, COL_VAR]==bound_var:
+                        nodes[new_off, COL_C2] = arg_off
+                        nodes[arg_off, COL_PARENT] = new_off
+                        nodes[arg_off, COL_PFIELD] = COL_C2
+                    else:
+                        rn = mapping[r]
+                        nodes[new_off, COL_C2] = rn
+                        nodes[rn, COL_PARENT] = new_off
+                        nodes[rn, COL_PFIELD] = COL_C2
+                elif u_type == TYPE_DUP:
+                    nodes[new_off, COL_TYPE]   = TYPE_DUP
+                    nodes[new_off, COL_LABEL]  = nodes[u, COL_LABEL]
+                    nodes[new_off, COL_X]      = nodes[u, COL_X]
+                    nodes[new_off, COL_Y]      = nodes[u, COL_Y]
+                    v = nodes[u, COL_C1]; b = nodes[u, COL_C2]
+                    if nodes[v, COL_TYPE]==TYPE_VAR and nodes[v, COL_VAR]==bound_var:
+                        nodes[new_off, COL_C1] = arg_off
+                        nodes[arg_off, COL_PARENT] = new_off
+                        nodes[arg_off, COL_PFIELD] = COL_C1
+                    else:
+                        vn = mapping[v]
+                        nodes[new_off, COL_C1] = vn
+                        nodes[vn, COL_PARENT] = new_off
+                        nodes[vn, COL_PFIELD] = COL_C1
+                    if nodes[b, COL_TYPE]==TYPE_VAR and nodes[b, COL_VAR]==bound_var:
+                        nodes[new_off, COL_C2] = arg_off
+                        nodes[arg_off, COL_PARENT] = new_off
+                        nodes[arg_off, COL_PFIELD] = COL_C2
+                    else:
+                        bn = mapping[b]
+                        nodes[new_off, COL_C2] = bn
+                        nodes[bn, COL_PARENT] = new_off
+                        nodes[bn, COL_PFIELD] = COL_C2
+                else:
+                    raise RuntimeError("Unknown type in beta-clone")
+                nodes[new_off, COL_ACTIVE] = 1
+            new_off = mapping[lam_off]
+        else:
+            # nested Let rewrite
+            # assign fresh var_ids = offsets based on base
+            off_y         = base + 0
+            off_z         = base + 1
+            off_fnode     = base + 2
+            off_xnode     = base + 3
+            off_vnode     = base + 4
+            off_Let_f     = base + 5
+            off_App_x     = base + 6
+            off_Let_x     = base + 7
+            off_App_v     = base + 8
+            off_Let_v     = base + 9
+            off_Lam_inner = base + 10
+            if off_Lam_inner >= nodes.shape[0]:
+                raise RuntimeError("K too small for nested-Let")
+            # Var nodes
+            for offn in (off_y, off_z, off_fnode, off_xnode, off_vnode):
+                nodes[offn, COL_TYPE]   = TYPE_VAR
+                nodes[offn, COL_VAR]    = offn
+                nodes[offn, COL_ACTIVE] = 1
+            # Let f = bod
+            nodes[off_Let_f, COL_TYPE]   = TYPE_LET
+            nodes[off_Let_f, COL_VAR]    = off_fnode
+            nodes[off_Let_f, COL_ACTIVE] = 1
+            bod_off = nodes[lam_off, COL_C1]
+            nodes[off_Let_f, COL_C1]     = bod_off
+            nodes[bod_off, COL_PARENT]   = off_Let_f; nodes[bod_off, COL_PFIELD] = COL_C1
+            # App x = App(lam_lab, arg_off, Var y)
+            nodes[off_App_x, COL_TYPE]   = TYPE_APP
+            nodes[off_App_x, COL_LABEL]  = lam_lab
+            nodes[off_App_x, COL_ACTIVE] = 1
+            nodes[off_App_x, COL_C1]     = arg_off
+            nodes[arg_off, COL_PARENT]   = off_App_x; nodes[arg_off, COL_PFIELD] = COL_C1
+            nodes[off_App_x, COL_C2]     = off_y
+            nodes[off_y, COL_PARENT]     = off_App_x; nodes[off_y, COL_PFIELD] = COL_C2
+            # Let x
+            nodes[off_Let_x, COL_TYPE]   = TYPE_LET
+            nodes[off_Let_x, COL_VAR]    = off_xnode
+            nodes[off_Let_x, COL_ACTIVE] = 1
+            nodes[off_Let_x, COL_C1]     = off_App_x
+            nodes[off_App_x, COL_PARENT] = off_Let_x; nodes[off_App_x, COL_PFIELD] = COL_C1
+            # link Let f.child2 = Let_x
+            nodes[off_Let_f, COL_C2]     = off_Let_x
+            nodes[off_Let_x, COL_PARENT] = off_Let_f; nodes[off_Let_x, COL_PFIELD] = COL_C2
+            # App v = App(app_lab, Var f, Var x)
+            nodes[off_App_v, COL_TYPE]   = TYPE_APP
+            nodes[off_App_v, COL_LABEL]  = lab_app
+            nodes[off_App_v, COL_ACTIVE] = 1
+            nodes[off_App_v, COL_C1]     = off_fnode
+            nodes[off_fnode, COL_PARENT] = off_App_v; nodes[off_fnode, COL_PFIELD] = COL_C1
+            nodes[off_App_v, COL_C2]     = off_xnode
+            nodes[off_xnode, COL_PARENT] = off_App_v; nodes[off_xnode, COL_PFIELD] = COL_C2
+            # Let v
+            nodes[off_Let_v, COL_TYPE]   = TYPE_LET
+            nodes[off_Let_v, COL_VAR]    = off_vnode
+            nodes[off_Let_v, COL_ACTIVE] = 1
+            nodes[off_Let_v, COL_C1]     = off_App_v
+            nodes[off_App_v, COL_PARENT] = off_Let_v; nodes[off_App_v, COL_PFIELD] = COL_C1
+            # link Let x.child2 = Let_v
+            nodes[off_Let_x, COL_C2]     = off_Let_v
+            nodes[off_Let_v, COL_PARENT] = off_Let_x; nodes[off_Let_v, COL_PFIELD] = COL_C2
+            # Lam inner
+            nodes[off_Lam_inner, COL_TYPE]   = TYPE_LAM
+            nodes[off_Lam_inner, COL_LABEL]  = lam_lab
+            nodes[off_Lam_inner, COL_VAR]    = off_z
+            nodes[off_Lam_inner, COL_ACTIVE] = 1
+            nodes[off_Lam_inner, COL_C1]     = off_vnode
+            nodes[off_vnode, COL_PARENT]     = off_Lam_inner; nodes[off_vnode, COL_PFIELD] = COL_C1
+            # link Let_v.child2 = Lam_inner
+            nodes[off_Let_v, COL_C2]         = off_Lam_inner
+            nodes[off_Lam_inner, COL_PARENT] = off_Let_v; nodes[off_Lam_inner, COL_PFIELD] = COL_C2
+            new_off = off_Let_f
+        # update parent pointer
+        p = nodes[ro, COL_PARENT]; pf = nodes[ro, COL_PFIELD]
+        if p >= 0:
+            nodes[p, pf] = new_off
+            nodes[new_off, COL_PARENT] = p
+            nodes[new_off, COL_PFIELD] = pf
+        else:
+            root_off = new_off
+    return nodes, root_off
+
+# --- Example tests ---
+if __name__ == "__main__":
+    MAX_DEPTH = 5
+    K = 50  # adjust as needed
+
+    # 1) Identity test: ((λx.x) *)
+    expr1 = "( (λx.x) * )"
+    parser = ParserIC(expr1)
+    term1 = parser.parse()
+    nodes1, N1 = init_static_array(term1, MAX_DEPTH, K)
+    nodes1_after, root1 = static_run(nodes1, N1, MAX_DEPTH, K)
+    print("Identity test active offsets:", np.nonzero(nodes1_after[:, COL_ACTIVE])[0])
+
+    # 2) Simple beta test: ((λa.(λb.a)) t) f
+    # Build AST manually
+    # var_ids: a=0, b=1, t=2, f=3
+    lam_b_a    = Lam(0, 1, Var(0))      # λb.a
+    lam_a_body = Lam(0, 0, lam_b_a)     # λa.(λb.a)
+    expr2      = App(0, App(0, lam_a_body, Var(2)), Var(3))
+    nodes2, N2 = init_static_array(expr2, MAX_DEPTH, K)
+    nodes2_after, root2 = static_run(nodes2, N2, MAX_DEPTH, K)
+    print("Beta test active offsets:", np.nonzero(nodes2_after[:, COL_ACTIVE])[0], "root:", root2)
+
+    # 3) Nested-Let test: App label mismatch: App(1, Lam(0,a->a), t)
+    lam_simple = Lam(0, 0, Var(0))
+    expr3      = App(1, lam_simple, Var(2))
+    nodes3, N3 = init_static_array(expr3, MAX_DEPTH, K)
+    nodes3_after, root3 = static_run(nodes3, N3, MAX_DEPTH, K)
+    print("Nested-Let test active offsets:", np.nonzero(nodes3_after[:, COL_ACTIVE])[0], "root:", root3)
+    # Print subtree
+    def print_subtree(nodes, off, indent=0):
+        typ = nodes[off, COL_TYPE]
+        if typ==TYPE_VAR:
+            print(" "*indent + f"Var({nodes[off, COL_VAR]})")
+        elif typ==TYPE_LAM:
+            print(" "*indent + f"Lam(label={nodes[off, COL_LABEL]}, var={nodes[off, COL_VAR]})")
+            print_subtree(nodes, nodes[off, COL_C1], indent+2)
+        elif typ==TYPE_APP:
+            print(" "*indent + f"App(label={nodes[off, COL_LABEL]})")
+            print_subtree(nodes, nodes[off, COL_C1], indent+2)
+            print_subtree(nodes, nodes[off, COL_C2], indent+2)
+        elif typ==TYPE_LET:
+            print(" "*indent + f"Let(var={nodes[off, COL_VAR]})")
+            print_subtree(nodes, nodes[off, COL_C1], indent+2)
+            print_subtree(nodes, nodes[off, COL_C2], indent+2)
+        else:
+            print(" "*indent + f"Type{typ} at {off}")
+    print("Nested-Let result subtree:")
+    if root3 is not None:
+        print_subtree(nodes3_after, root3)
+
+Compared to the full Haskell/Python IC engine, the static‐array version still needs:
+
+All other reduction patterns beyond App‐Lam:
+
+App‐Era (when function is Era), App‐Sup, App‐Dup.
+
+Dup‐Lam, Dup‐Sup, Dup‐Era, Dup‐Dup rules.
+
+Let‐reduction (substitute in body) when not part of nested‐Let from label mismatch.
+
+Leftmost‐outermost traversal across the active nodes each step, not just first App‐Lam. Need to scan for any applicable redex each iteration.
+
+WHNF vs. full step semantics: whnf-like behavior (reduce the head until no more at head) before descending, matching the original’s resetReduction logic.
+
+Name/fresh‐ID management consistent across clones, esp. if fresh IDs must avoid collision globally.
+
+Garbage collection / slot reuse: after many steps, deactivated slots should be reclaimed or reused across deeper reductions.
+
+Tracking interaction counts or stopping criteria if needed.
+
+Reconstruction or pretty‐printing of final Term with readable names (mapping numeric IDs back to strings).
+
+Support for sharing/substitution map semantics if necessary to mimic original performance or sharing behavior.
+
+Parser corner‐cases (comments, more spacing variants) if the grammar in Haskell/Python allowed more forms.
+
+Filling in all those IC cases and the full reduction loop (whnf + step descent) completes feature parity.
+
+Before starting, summarise what you want to do
